@@ -1,0 +1,1 @@
+🚀 ReproduceAI is an open project that systematically re-implements and verifies every major milestone paper in Machine Learning and AI history — from classic perceptrons to modern foundation models.
