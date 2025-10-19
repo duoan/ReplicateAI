@@ -24,9 +24,7 @@ We believe that **understanding AI means rebuilding it — line by line, layer b
 - 📜 **Goal**: Faithfully re-implement influential ML/AI papers with open code, datasets, and experiments  
 - 🧱 **Scope**: From *Qwen2.5 (2025)* to *Perceptron (1958)*  
 - 🧠 **Approach**: Reverse timeline — start with Foundation Models, then trace history backward  
-- 🧾 **Output**: Each paper becomes a self-contained, reproducible module with reports and experiments  
-
----
+- 🧾 **Output**: Each paper becomes a self-contained, reproducible module with reports and experiments
 
 ## 🪐 Stage 1 — Foundation & Multimodal Era (2023–2025)
 
@@ -49,10 +47,10 @@ We believe that **understanding AI means rebuilding it — line by line, layer b
 
 ## 🔍 Stage 2 — Representation & Sequence Models (2013–2020)
 
-| Year | Paper | Author | Goal | Status |
-|------|--------|---------|--------|---------|
+| Year | Paper | Author | Goal | Status     |
+|------|--------|---------|--------|------------|
 | 2018 | BERT | Devlin et al. | Masked Language Modeling | 🧭 Planned |
-| 2017 | Transformer | Vaswani et al. | “Attention Is All You Need” | 🧭 Planned |
+| 2017 | Transformer | Vaswani et al. | “Attention Is All You Need” | 🔬 In Reproduction |
 | 2014 | Seq2Seq | Sutskever et al. | Encoder-decoder translation | 🧭 Planned |
 | 2013 | Word2Vec | Mikolov et al. | Learn word embeddings | 🧭 Planned |
 | 2015 | Bahdanau Attention | Bahdanau et al. | RNN + Attention | 🧭 Planned |
@@ -91,6 +89,21 @@ We believe that **understanding AI means rebuilding it — line by line, layer b
 | 1958 | Perceptron | Rosenblatt | Linear separability | 🧭 Planned |
 
 ---
+
+## Lifecycle
+```
+🧭 Planned
+   ↓
+🔬 In Reproduction
+   ↓
+🧪 Under Evaluation
+   ↓
+📈 Verified
+   ↓
+🧾 Documented
+   ↓
+🧰 Extended (optional)
+```
 
 ## 📁 Repository Structure
 
