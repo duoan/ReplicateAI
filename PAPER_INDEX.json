@@ -15,6 +15,17 @@
       "path": "stage2_representation/2018_BERT",
       "reproducer": "TBD",
       "last_updated": "2025-10-18"
+    },
+    {
+      "year": 2017,
+      "paper": "Attention Is All You Need",
+      "organization": "Google",
+      "stage": "Representation",
+      "status": "planned",
+      "tags": [],
+      "path": "stage2_representation/2017_AttentionIsAllYouNeed",
+      "reproducer": "TBD",
+      "last_updated": "2025-10-18"
     }
   ]
 }
