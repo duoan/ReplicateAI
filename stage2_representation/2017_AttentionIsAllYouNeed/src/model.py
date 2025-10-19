@@ -23,29 +23,29 @@ class ScaledDotProductAttention(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
-            query: (N, n_heads, T_q, d_k)
-            key: (N, n_heads, T_k, d_k)
-            value: (N, n_heads, T_k, d_v)
-            mask: (N, 1, 1, T_k) or (N, 1, T_q, T_k)
+            query: (N, H, T, d_head)
+            key: (N, H, T, d_head)
+            value: (N, H, T, d_head)
+            mask: (N, 1, 1, T) or (N, 1, T, T)
                   0 for masked, 1 for valid positions.
 
         Returns:
-            output: (N, n_heads, T_q, d_v)
-            attention_weights: (N, n_heads, T_q, T_k)
+            output: (N, H, T, d_head)
+            attention_weights: (N, H, T, T)
         """
-
-        d_k = query.size(-1)
-        # (N, n_heads, T_q, d_k) @ (N, n_heads, d_k, T_k)
-        # => (N, n_heads, T_q, T_k)
-        scores = torch.matmul(query, key.transpose(-2, -1)) / (d_k ** 0.5)
+        d_key = key.size(2)
+        # (N, H, T, d_head) @ (N, H, d_head, T)
+        # => (N, n_heads, T, T)
+        scale = d_key ** -0.5
+        scores = torch.matmul(query, key.transpose(-2, -1)) * scale
         if mask is not None:
             scores = scores.masked_fill(mask == 0, float('-inf'))
 
-        attn_weights = F.softmax(scores, dim=-1)
-        attn_weights = self.dropout(attn_weights)
+        attn_weights = F.softmax(scores, dim=-1)  # very q weights cross keys
+        attn_weights = self.dropout(attn_weights)  # (N, H, T, T)
 
-        # (N, n_heads, T_q, T_k) @ (N, n_heads, T_k, d_v)
-        # => (N, n_heads, T_q, d_v)
+        # (N, H, T, T) @ (N, H, T, d_head)
+        # => (N, H, T, d_head)
         output = torch.matmul(attn_weights, value)
 
         return output, attn_weights
@@ -58,7 +58,7 @@ class MultiHeadAttention(nn.Module):
             d_model=512,
             n_heads=8,
             dropout_prob=0.1,
-            bias=True,
+            bias=False,
     ) -> None:
         super().__init__()
         assert d_model % n_heads == 0, f"{d_model=} must be x times of {n_heads=}"
@@ -66,7 +66,7 @@ class MultiHeadAttention(nn.Module):
         self.d_model = d_model
         self.n_heads = n_heads
         self.dropout_prob = dropout_prob
-        self.d_kv = d_model // n_heads
+        self.d_head = d_model // n_heads
 
         # projection layers for query, key, value
         self.W_q = nn.Linear(d_model, d_model, bias=bias)
@@ -81,20 +81,20 @@ class MultiHeadAttention(nn.Module):
         self.dropout = nn.Dropout(dropout_prob)
 
     def _split_heads(self, x: torch.Tensor) -> torch.Tensor:
-        """Split last dim into (n_heads, d_k)"""
+        """(N, T, d_model) -> (N, T, H, d_head)"""
         N, T, _ = x.shape
-        x = x.view(N, T, self.n_heads, self.d_kv)
+        x = x.view(N, T, self.n_heads, self.d_head)
         return x.transpose(1, 2)  # axis change
 
     def _combine_heads(self, x: torch.Tensor) -> torch.Tensor:
         """
-        (N, n_heads, T_q, T_k) into (N, T_q, n_heads, T_k)
+        (N, H, T, d_head) transpose into (N, T, H, d_head)
         view
-         (N, T_q, n_heads, T_k) => (N, T_q, n_heads * T_k)
+         (N, T, H, d_head) => (N, T, H * d_head) == (N, T, H, d_model)
         """
-        N, H, T, d_k = x.shape
+        N, H, T, d_head = x.shape
         # must using contiguous before view [geometry change]
-        return x.transpose(1, 2).contiguous().view(N, T, H * d_k)
+        return x.transpose(1, 2).contiguous().view(N, T, H * d_head)
 
     def forward(
             self,
@@ -105,46 +105,46 @@ class MultiHeadAttention(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
-            query: (N, T_q, d_model)
-            key:   (N, T_k, d_model) or None (defaults to self-attention)
-            value: (N, T_k, d_model) or None
-            mask:  (N, 1, 1, T_k) or (N, H, T_q, T_k), bool
+            query: (N, T, d_model)
+            key:   (N, T, d_model) or None (defaults to self-attention)
+            value: (N, T, d_model) or None
+            mask:  (N, 1, 1, T) or (N, H, T, T), bool
         Returns:
-            out: (N, T_q, d_model)
-            attn_weights: (N, H, T_q, T_k)
+            out: (N, T, d_model)
+            attn_weights: (N, H, T, T)， for visualization analysis, distillation, feature selection, pruning etc.
         """
         if key is None:  # self attention
             key = query
         if value is None:
             value = key
 
-        N, T_q, _ = query.shape
+        N, T, _ = query.shape
 
         # Linear projections
-        # (N, T_q, d_model) @ (d_model, d_model) => (N, T_q, d_model)
-        query = self.W_q(query)
-        key = self.W_k(key)
-        value = self.W_v(value)
+        # (N, T, d_model) @ (d_model, d_model) => (N, T, d_model)
+        query = self.W_q(query)  # (N, T, d_model)
+        key = self.W_k(key)  # (N, T, d_model)
+        value = self.W_v(value)  # (N, T, d_model)
 
         # Split heads
-        # (N, T_q, d_model) => ((N, T_q, n_heads, d_kv)
-        query = self._split_heads(query)
-        key = self._split_heads(key)
-        value = self._split_heads(value)
+        # (N, T, d_model) => (N, T, H, d_head)
+        query = self._split_heads(query)  # (N, T, H, d_head)
+        key = self._split_heads(key)  # (N, T, H, d_head)
+        value = self._split_heads(value)  # (N, T, H, d_head)
 
         # Attention
         attn_out, attn_weights = self.attention(query, key, value, mask)
-        # attn_out (N, n_heads, T_q, T_k)
-        # attn_weights (N, n_heads, T_q, T_k)
+        # attn_out (N, H, T, d_head)
+        # attn_weights (N, H, T, T)
 
         # Combine heads
-        attn_out = self._combine_heads(attn_out)
+        attn_out = self._combine_heads(attn_out)  # (N, T, d_model)
         out = self.W_o(attn_out)
         out = self.dropout(out)
         return out, attn_weights
 
 
-class PositionwiseFeedForward(nn.Module):
+class FeedForward(nn.Module):
 
     def __init__(
             self,
@@ -152,18 +152,15 @@ class PositionwiseFeedForward(nn.Module):
             d_ff=2048,
             dropout_prob=0.1,
             bias=True,
-            norm_eps=0.1,
             activation='relu',
     ):
         super().__init__()
         self.d_model = d_model
         self.d_ff = d_ff
-        self.dropout_prob = dropout_prob
-        self.norm_eps = norm_eps
-        self.W_q = nn.Linear(d_model, d_model, bias=bias)
-
-        self.input_proj = nn.Linear(d_model, d_ff, bias=bias)
-        self.output_proj = nn.Linear(d_ff, d_model, bias=bias)
+        # up sampling
+        self.expansion = nn.Linear(d_model, d_ff, bias=bias)  # (d_model, d_ff)
+        # down sampling
+        self.reduction = nn.Linear(d_ff, d_model, bias=bias)  # (d_ff, d_model)
 
         if activation == 'relu':
             self.activation = nn.ReLU()
@@ -172,7 +169,7 @@ class PositionwiseFeedForward(nn.Module):
         else:
             raise NotImplementedError(f"Unsupported activation: {activation}")
 
-        self.dropout = nn.Dropout(dropout_prob)
+        self.dropout = nn.Dropout(dropout_prob)  # regularization
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -181,11 +178,75 @@ class PositionwiseFeedForward(nn.Module):
            Returns:
                out: (N, T, d_model)
         """
-        out = self.input_proj(x)  # (N, T, d_hidden)
+        out = self.expansion(x)  # (N, T, d_model) @ (d_model, d_ff) => (N, T, d_ff)
         out = self.activation(out)  # nonlinearity
         out = self.dropout(out)  # regularization
-        out = self.output_proj(out)  # (N, T, d_model)
+        out = self.reduction(out)  # (N, T, d_ff) @ (d_ff, d_model) => (N, T, d_model)
         return out
+
+
+class TransformerEncoderLayer(nn.Module):
+    """
+    Transformer Encoder Layer (Pre-LayerNorm variant)
+    -------------------------------------------------
+    Structure:
+        x -> LN -> MHA -> Dropout -> Add
+          -> LN -> FFN -> Dropout -> Add
+
+    Args:
+        d_model: model dimension
+        n_heads: number of attention heads
+        d_ff: feed-forward hidden dimension (expansion size)
+        dropout_prob: dropout probability
+    """
+
+    def __init__(
+            self,
+            d_model=512,
+            n_heads=8,
+            d_ff=2048,
+            dropout_prob=0.1,
+            bias=False,
+            activation='relu',
+            norm_eps=1e-6,
+    ):
+        super().__init__()
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.d_ff = d_ff
+
+        self.attn = MultiHeadAttention(d_model, n_heads, dropout_prob, bias)
+        self.ff = FeedForward(d_model, d_ff, dropout_prob, bias, activation)
+
+        # LayerNorm (post)
+        self.norm1 = nn.LayerNorm(d_model, eps=norm_eps)
+        self.norm2 = nn.LayerNorm(d_model, eps=norm_eps)
+
+        self.dropout = nn.Dropout(dropout_prob)
+
+    def forward(
+            self,
+            x: torch.Tensor,
+            mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        Args:
+            x:    (N, T, d_model) - input embeddings or previous layer output
+            mask: (N, 1, 1, T) or (N, H, T, T), optional attention mask
+
+        Returns:
+            output: (N, T, d_model)
+        """
+        # --- Self-Attention block ---
+        attn_out, attn_weights = self.attn(x, mask=mask)
+        x = x + self.dropout(attn_out)  # residual connection
+        x = self.norm1(x)  # Post-LN
+
+        ff_out = self.ff(x)
+        x = x + self.dropout(ff_out)  # residual connection
+        x = self.norm2(x)  # Post-LN
+
+        return x
 
 
 def test_scaled_dot_product_attention_causal_only():
@@ -211,8 +272,8 @@ def test_multi_head_attention():
     assert w.shape == (2, 8, 10, 10)
 
 
-def test_positionwise_feed_forward():
-    ff = PositionwiseFeedForward(d_model=512, d_ff=2048, activation="gelu")
+def test_feed_forward():
+    ff = FeedForward(d_model=512, d_ff=2048, activation="gelu")
     x = torch.randn(2, 10, 512)
     out = ff(x)
     assert out.shape == (2, 10, 512)  # torch.Size([2, 10, 512])
