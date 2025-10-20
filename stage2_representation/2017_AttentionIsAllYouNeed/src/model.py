@@ -1,4 +1,5 @@
 from typing import Optional
+
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -33,7 +34,7 @@ class ScaledDotProductAttention(nn.Module):
             output: (N, H, T, d_head)
             attention_weights: (N, H, T, T)
         """
-        d_key = key.size(2)
+        d_key = key.size(-1)
         # (N, H, T, d_head) @ (N, H, d_head, T)
         # => (N, n_heads, T, T)
         scale = d_key ** -0.5
@@ -226,27 +227,171 @@ class TransformerEncoderLayer(nn.Module):
 
     def forward(
             self,
-            x: torch.Tensor,
-            mask: Optional[torch.Tensor] = None,
+            src: torch.Tensor,
+            src_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Args:
-            x:    (N, T, d_model) - input embeddings or previous layer output
-            mask: (N, 1, 1, T) or (N, H, T, T), optional attention mask
+            src:    (N, T, d_model) - input embeddings or previous layer output
+            src_mask: (N, 1, 1, T) or (N, H, T, T), optional attention mask
 
         Returns:
             output: (N, T, d_model)
         """
         # --- Self-Attention block ---
-        attn_out, attn_weights = self.attn(x, mask=mask)
-        x = x + self.dropout(attn_out)  # residual connection
-        x = self.norm1(x)  # Post-LN
+        attn_out, attn_weights = self.attn(src, mask=src_mask)
+        attn_out = src + self.dropout(attn_out)  # residual connection
+        attn_out = self.norm1(attn_out)  # Post-LN
 
-        ff_out = self.ff(x)
-        x = x + self.dropout(ff_out)  # residual connection
-        x = self.norm2(x)  # Post-LN
+        ff_out = self.ff(attn_out)
+        out = attn_out + self.dropout(ff_out)  # residual connection
+        out = self.norm2(out)  # Post-LN
 
-        return x
+        return out
+
+
+class TransformerDecoderLayer(nn.Module):
+
+    def __init__(
+            self,
+            d_model=512,
+            n_heads=8,
+            d_ff=2048,
+            dropout_prob=0.1,
+            bias=False,
+            activation='relu',
+            norm_eps=1e-6,
+    ):
+        super().__init__()
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.d_ff = d_ff
+        self.self_attn = MultiHeadAttention(d_model, n_heads, dropout_prob, bias)
+        self.cross_attn = MultiHeadAttention(d_model, n_heads, dropout_prob, bias)
+        self.ff = FeedForward(d_model, d_ff, dropout_prob, bias, activation)
+
+        self.norm1 = nn.LayerNorm(d_model, eps=norm_eps)
+        self.norm2 = nn.LayerNorm(d_model, eps=norm_eps)
+        self.norm3 = nn.LayerNorm(d_model, eps=norm_eps)
+
+        self.dropout1 = nn.Dropout(dropout_prob)
+        self.dropout2 = nn.Dropout(dropout_prob)
+        self.dropout3 = nn.Dropout(dropout_prob)
+
+    def forward(
+            self,
+            tgt: torch.Tensor,
+            src: torch.Tensor,
+            tgt_mask: Optional[torch.Tensor] = None,
+            src_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Pass the inputs (and mask) through the decoder layer.
+
+        Args:
+
+            tgt: the sequence to the decoder layer (required).
+            src: the sequence from the last layer of the encoder (required).
+            tgt_mask: the mask for the tgt sequence (optional).
+            src_mask: the mask for the memory sequence (optional).
+
+        """
+        # self attention for target
+        self_attn_out, self_attn_weights = self.self_attn(tgt, mask=tgt_mask)
+        self_attn_out = self.dropout1(self_attn_out)
+        self_attn_out = self.norm1(tgt + self_attn_out)
+
+        # cross attention with source
+        cross_attn_out, cross_attn_weights = self.cross_attn(tgt, src, src, src_mask)
+        cross_attn_out = self.norm2(self_attn_out + self.dropout2(cross_attn_out))
+
+        # feed forward
+        ff_out = self.ff(cross_attn_out)
+        out = self.norm3(cross_attn_out + self.dropout3(ff_out))
+
+        return out
+
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, n_position=5000):
+        super().__init__()
+
+        pe = torch.zeros(n_position, d_model)  # (n_position, d_model)
+
+        position = torch.arange(0, n_position, dtype=torch.float).unsqueeze(1)  # (n_position, 1)
+
+        div_base = 10000
+        for i in range(0, d_model, 2):
+            denominator = div_base ** (2 * i / d_model)  # 10000^(2i/d_model)
+            angle = position / denominator  # (n_position, 1)
+            pe[:, i] = torch.sin(angle).squeeze(1)  # even dims: sin
+            if i + 1 < d_model:
+                pe[:, i + 1] = torch.cos(angle).squeeze(1)  # odd dims: cos
+        # add batch dimension
+        pe = pe.unsqueeze(0)  # (1, n_position, d_model)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        # x: (N, T, d_model)
+        T = x.size(1)
+        # (N, T, d_model) + (1, T, d_model) ==> (N, T, d_model)
+        return x + self.pe[:, :T]
+
+
+class Transformer(nn.Module):
+    def __init__(
+            self,
+            n_src_vocab,
+            n_tgt_vocab,
+            n_positions,
+            d_model=512,
+            n_heads=8,
+            d_ff=2048,
+            dropout_prob=0.1,
+            bias=False,
+            activation="gelu",
+            norm_eps=1e-6,
+            n_encoder_layers=1,
+            n_decoder_layers=1,
+    ):
+        super().__init__()
+        self.pos_enc = PositionalEncoding(d_model, n_positions)
+
+        self.src_embed = nn.Embedding(n_src_vocab, d_model)  # input embedding
+        self.encoder = nn.ModuleList([
+            TransformerEncoderLayer(d_model, n_heads, d_ff, dropout_prob, bias, activation, norm_eps)
+            for _ in range(n_encoder_layers)
+        ])
+
+        self.tgt_embed = nn.Embedding(n_tgt_vocab, d_model)  # output embedding
+        self.decoder = nn.ModuleList([
+            TransformerDecoderLayer(d_model, n_heads, d_ff, dropout_prob, bias, activation, norm_eps)
+            for _ in range(n_decoder_layers)
+        ])
+
+        self.tgt_proj = nn.Linear(d_model, n_tgt_vocab, bias=bias)
+
+    def forward(
+            self,
+            src_ids: torch.Tensor,
+            tgt_ids: torch.Tensor,
+            src_mask: Optional[torch.Tensor] = None,
+            tgt_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        # Encoder
+        src_emb = self.src_embed(src_ids)
+        src = self.pos_enc(src_emb)
+        for layer in self.encoder:
+            src = layer(src, src_mask)
+
+        # Decoder
+        tgt_emb = self.tgt_embed(tgt_ids)
+        tgt = self.pos_enc(tgt_emb)
+        for layer in self.decoder:
+            tgt = layer(tgt, src, src_mask=src_mask, tgt_mask=tgt_mask)
+
+        # Logits
+        logits = self.tgt_proj(tgt)
+        return logits
 
 
 def test_scaled_dot_product_attention_causal_only():
