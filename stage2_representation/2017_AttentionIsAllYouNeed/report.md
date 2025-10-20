@@ -49,7 +49,13 @@
 
 ## 🧠 Lessons Learned
 - Scale up is the key to improve the model efficient training on large model. Multi head approach enables this. 
--  
+- Designed optimizer, which aligned with the model hidden dimension, why?
+- Position encoding is important to understand the sequence char position information. 
+  - The paper implementation Sinusoidal Encoding is absolute position, may not accurate like today's [RoPE](https://arxiv.org/pdf/2104.09864) which 
+  enables positional encoding in context 
+  - [Understanding Positional Encoding in Transformers](https://erdem.pl/2021/05/understanding-positional-encoding-in-transformers)
+  - [You could have designed state of the art positional encoding](https://huggingface.co/blog/designing-positional-encoding)
+  - https://medium.com/autonomous-agents/math-behind-positional-embeddings-in-transformer-models-921db18b0c28
 
 ---
 

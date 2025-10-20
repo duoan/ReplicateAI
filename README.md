@@ -47,13 +47,13 @@ We believe that **understanding AI means rebuilding it — line by line, layer b
 
 ## 🔍 Stage 2 — Representation & Sequence Models (2013–2020)
 
-| Year | Paper | Author | Goal | Status     |
-|------|--------|---------|--------|------------|
-| 2018 | BERT | Devlin et al. | Masked Language Modeling | 🧭 Planned |
-| 2017 | Transformer | Vaswani et al. | “Attention Is All You Need” | 🔬 In Reproduction |
-| 2014 | Seq2Seq | Sutskever et al. | Encoder-decoder translation | 🧭 Planned |
-| 2013 | Word2Vec | Mikolov et al. | Learn word embeddings | 🧭 Planned |
-| 2015 | Bahdanau Attention | Bahdanau et al. | RNN + Attention | 🧭 Planned |
+| Year | Paper                                                              | Author | Goal | Status     |
+|------|--------------------------------------------------------------------|---------|--------|------------|
+| 2018 | BERT                                                               | Devlin et al. | Masked Language Modeling | 🧭 Planned |
+| 2017 | [Transformer](./stage2_representation/2017_AttentionIsAllYouNeed/) | Vaswani et al. | “Attention Is All You Need” | 🔬 In Reproduction |
+| 2014 | Seq2Seq                                                            | Sutskever et al. | Encoder-decoder translation | 🧭 Planned |
+| 2013 | Word2Vec                                                           | Mikolov et al. | Learn word embeddings | 🧭 Planned |
+| 2015 | Bahdanau Attention                                                 | Bahdanau et al. | RNN + Attention | 🧭 Planned |
 
 ---
 
