@@ -203,6 +203,7 @@ git push
 | **2025-10-18** | ✅ Initialized ReproduceAI structure         | Added Makefile, scripts, and template                                                    |
 | **2025-10-18** | ➕ Added BERT    | Verified indexing and `make status` output                                               |
 | **2025-10-18** | ✅ Attention All You Need    | Implemented Scaled Dot-Product Attention, MultiHeadAttention and PositionwiseFeedforward |
+| **2025-10-18** | ✅ Attention All You Need    | Implemented Encoder, Decoder, Transformer,add a toy dataset for train test               |
 
 > You can continue appending to this table as the project evolves.
 
