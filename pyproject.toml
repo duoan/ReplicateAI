@@ -5,10 +5,15 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+  "datasets>=4.2.0",
+  "hypothesis>=6.142.2",
   "pytest>=8.4.2",
+  "sentencepiece>=0.2.1",
+  "tiktoken>=0.12.0",
   "torch>=2.7.0",
   "torchvision>=0.22.0",
   "tqdm>=4.67.1",
+  "transformers>=4.57.1",
 ]
 
 [tool.uv.sources]
