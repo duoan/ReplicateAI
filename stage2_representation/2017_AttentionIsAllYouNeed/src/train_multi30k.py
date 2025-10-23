@@ -10,6 +10,7 @@ from tqdm.auto import tqdm
 from data import Multi30KDataset
 from model import Transformer
 from optimizer import NoamScheduler
+from tokenizer import BaseTokenizer
 
 torch.autograd.set_detect_anomaly(True)
 device = torch.accelerator.current_accelerator()
@@ -20,7 +21,7 @@ def train(model, dataloader, optimizer, scheduler, pad_idx, device):
     total_loss = 0
     progress_bar = tqdm(dataloader, desc='Training', leave=False, dynamic_ncols=True)
     for batch in progress_bar:
-        src, tgt = batch["src"], batch["tgt"]
+        src, tgt = batch["src_ids"], batch["tgt_ids"]
         src = src.to(device)
         tgt = tgt.to(device)
 
@@ -32,6 +33,7 @@ def train(model, dataloader, optimizer, scheduler, pad_idx, device):
             logits.reshape(-1, logits.size(-1)),
             tgt_out.reshape(-1),
             ignore_index=pad_idx,
+            label_smoothing=0.1,
         )
 
         optimizer.zero_grad()
@@ -54,12 +56,11 @@ def train(model, dataloader, optimizer, scheduler, pad_idx, device):
 def evaluate(model, dataloader, pad_idx, device):
     model.eval()
     total_loss = 0
-    total_bleu = []
 
     with torch.no_grad():
         progress = tqdm(dataloader, desc='Validation', leave=False, dynamic_ncols=True)
         for batch in progress:
-            src, tgt = batch["src"], batch["tgt"]
+            src, tgt = batch["src_ids"], batch["tgt_ids"]
             src = src.to(device)
             tgt = tgt.to(device)
 
@@ -69,6 +70,7 @@ def evaluate(model, dataloader, pad_idx, device):
                 logits.reshape(-1, logits.size(-1)),
                 tgt_out.reshape(-1),
                 ignore_index=pad_idx,
+                label_smoothing=0.1,
             )
             total_loss += loss.item()
 
@@ -79,9 +81,11 @@ def evaluate(model, dataloader, pad_idx, device):
     return avg_loss, ppl
 
 
-train_dataset = Multi30KDataset(split="train")
-val_dataset = Multi30KDataset(split="validation")
-test_dataset = Multi30KDataset(split="test")
+src_tokenizer = BaseTokenizer.load("tokenizer_en_bpe.json")
+tgt_tokenizer = BaseTokenizer.load("tokenizer_de_bpe.json")
+train_dataset = Multi30KDataset(split="train", src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer)
+val_dataset = Multi30KDataset(split="validation", src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer)
+test_dataset = Multi30KDataset(split="test", src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer)
 
 model = Transformer(
     src_pad_id=train_dataset.pad_id,
@@ -105,12 +109,13 @@ train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=32, shuffle=True)
 
 for epoch in range(1, 11):
-    tqdm.write(f"\n[Epoch {epoch:02d}] ------------------------------")
+    tqdm.write(f"\n[Epoch {epoch:02d}] ------------------------------\n")
     start = time.time()
-    train_loss, train_ppl = train(model, train_loader, optimizer, scheduler, pad_idx=train_dataset.pad_id,device=device)
+    train_loss, train_ppl = train(model, train_loader, optimizer, scheduler, pad_idx=train_dataset.pad_id,
+                                  device=device)
 
     end = time.time()
     lr = scheduler.get_last_lr()[0]
-    tqdm.write(f"Training Loss: {train_loss:.4f} | PPL: {train_ppl:.2f} | LR: {lr:.2e} | Time: {end - start:.2f}s")
+    tqdm.write(f"Training Loss: {train_loss:.4f} | PPL: {train_ppl:.2f} | LR: {lr:.2e} | Time: {end - start:.2f}s\n")
     val_loss, val_ppl = evaluate(model, val_loader, train_dataset.pad_id, device)
-    tqdm.write(f"Validation Loss: {val_loss:.4f} | PPL: {val_ppl:.2f}")
+    tqdm.write(f"Validation Loss: {val_loss:.4f} | PPL: {val_ppl:.2f}\n")

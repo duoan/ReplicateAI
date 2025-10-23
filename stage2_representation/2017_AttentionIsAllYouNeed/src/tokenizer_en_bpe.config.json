@@ -1,0 +1,12 @@
+{
+  "tokenizer_type": "BPETokenizer",
+  "pad_token": "[PAD]",
+  "unk_token": "[UNK]",
+  "sos_token": "[SOS]",
+  "eos_token": "[EOS]",
+  "pad_id": 0,
+  "unk_id": 1,
+  "sos_id": 2,
+  "eos_id": 3,
+  "vocab_size": 5000
+}

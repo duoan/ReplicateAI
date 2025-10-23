@@ -1,4 +1,3 @@
-
 # 🧠 ReproduceAI Development Notes
 
 > This document records all development operations, workflows, and progress logs for **ReproduceAI**.  
@@ -45,7 +44,7 @@ ReproduceAI/
 Each stage corresponds to a historical era of AI research:
 
 | Stage                   | Era                  | Description                          |
-| ----------------------- | -------------------- | ------------------------------------ |
+|-------------------------|----------------------|--------------------------------------|
 | stage1_foundation       | 🪐 Modern Foundation | LLMs & Multimodal Models (2023–2025) |
 | stage2_representation   | 🔍 Representation    | Transformers, BERT, Embeddings       |
 | stage3_deep_renaissance | 🧩 Deep Renaissance  | CNNs, Autoencoders                   |
@@ -186,7 +185,7 @@ git push
 ## 🧭 10. Quick Reference Cheat Sheet
 
 | Task                    | Command                                                 |
-| ----------------------- | ------------------------------------------------------- |
+|-------------------------|---------------------------------------------------------|
 | Initialize repo         | `make init`                                             |
 | Add paper               | `make add name="..." year=YYYY org="..." stage=<stage>` |
 | Check status            | `make status`                                           |
@@ -198,12 +197,15 @@ git push
 
 ## 🧠 11. Development Log (Timeline)
 
-| Date           | Update                                      | Notes                                                                                    |
-| -------------- | ------------------------------------------- |------------------------------------------------------------------------------------------|
-| **2025-10-18** | ✅ Initialized ReproduceAI structure         | Added Makefile, scripts, and template                                                    |
-| **2025-10-18** | ➕ Added BERT    | Verified indexing and `make status` output                                               |
-| **2025-10-18** | ✅ Attention All You Need    | Implemented Scaled Dot-Product Attention, MultiHeadAttention and PositionwiseFeedforward |
-| **2025-10-18** | ✅ Attention All You Need    | Implemented Encoder, Decoder, Transformer,add a toy dataset for train test               |
+| Date           | Update                              | Notes                                                                                    |
+|----------------|-------------------------------------|------------------------------------------------------------------------------------------|
+| **2025-10-18** | ✅ Initialized ReproduceAI structure | Added Makefile, scripts, and template                                                    |
+| **2025-10-18** | ➕ Added BERT                        | Verified indexing and `make status` output                                               |
+| **2025-10-18** | ✅ Attention All You Need            | Implemented Scaled Dot-Product Attention, MultiHeadAttention and PositionwiseFeedforward |
+| **2025-10-18** | ✅ Attention All You Need            | Implemented Encoder, Decoder, Transformer,add a toy dataset for train test               |
+| **2025-10-21** | ✅ Attention All You Need            | Implemented training on multi30k dataset training                                        |
+| **2025-10-22** | ✅ Attention All You Need            | Debug and fixed loss NAN issue, and refacted the code                                    |
+| **2025-10-23** | ✅ Attention All You Need            | Implemented multiple tokenizer to abalition test                                         |
 
 > You can continue appending to this table as the project evolves.
 
@@ -212,7 +214,7 @@ git push
 ## 🧭 12. Stage Naming Summary
 
 | Stage Code     | Directory               | Display Name         | Era         |
-| -------------- | ----------------------- | -------------------- | ----------- |
+|----------------|-------------------------|----------------------|-------------|
 | foundation     | stage1_foundation       | 🪐 Modern Foundation | 2023–2025   |
 | representation | stage2_representation   | 🔍 Representation    | 2013–2020   |
 | deep           | stage3_deep_renaissance | 🧩 Deep Renaissance  | 2006–2014   |
