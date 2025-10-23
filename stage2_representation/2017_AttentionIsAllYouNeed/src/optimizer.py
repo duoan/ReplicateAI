@@ -11,5 +11,7 @@ class NoamScheduler(optim.lr_scheduler._LRScheduler):
 
     def get_lr(self):
         step = max(1, self._step_count)
-        scale = (self.d_model ** -0.5)  * min(step ** -0.5, step * (self.warmup_steps ** -1.5))
-        return [base_lr * scale for base_lr in self.base_lrs]
+        # 论文公式: lr = d_model^(-0.5) * min(step^(-0.5), step * warmup^(-1.5))
+        scale = (self.d_model ** -0.5) * min(step ** -0.5, step * (self.warmup_steps ** -1.5))
+        # base_lr 应该是 1.0，直接返回 scale
+        return [scale for _ in self.base_lrs]

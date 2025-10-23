@@ -40,7 +40,10 @@ class ScaledDotProductAttention(nn.Module):
         scale = d_key ** -0.5
         scores = torch.matmul(query, key.transpose(-2, -1)) * scale
         if mask is not None:
-            scores = scores.masked_fill(mask == 0, float('-inf'))
+            if mask.dtype == torch.bool:
+                scores = scores.masked_fill(~mask, -10000)
+            else:
+                scores = scores.masked_fill(mask == 0, -10000)
 
         attn_weights = F.softmax(scores, dim=-1)  # very q weights cross keys
         attn_weights = self.dropout(attn_weights)  # (N, H, T, T)
@@ -133,7 +136,6 @@ class MultiHeadAttention(nn.Module):
         key = self._split_heads(key)  # (N, T, H, d_head)
         value = self._split_heads(value)  # (N, T, H, d_head)
 
-        # Attention
         attn_out, attn_weights = self.attention(query, key, value, mask)
         # attn_out (N, H, T, d_head)
         # attn_weights (N, H, T, T)
@@ -296,13 +298,13 @@ class TransformerDecoderLayer(nn.Module):
 
         """
         # self attention for target
-        self_attn_out, self_attn_weights = self.self_attn(tgt, mask=tgt_mask)
-        self_attn_out = self.dropout1(self_attn_out)
-        self_attn_out = self.norm1(tgt + self_attn_out)
+        tgt_self_attn_out, self_attn_weights = self.self_attn(tgt, mask=tgt_mask)
+        tgt_self_attn_out = self.dropout1(tgt_self_attn_out)
+        tgt_self_attn_out = self.norm1(tgt + tgt_self_attn_out)
 
         # cross attention with source
-        cross_attn_out, cross_attn_weights = self.cross_attn(tgt, src, src, src_mask)
-        cross_attn_out = self.norm2(self_attn_out + self.dropout2(cross_attn_out))
+        cross_attn_out, cross_attn_weights = self.cross_attn(tgt_self_attn_out, src, src, src_mask)
+        cross_attn_out = self.norm2(tgt_self_attn_out + self.dropout2(cross_attn_out))
 
         # feed forward
         ff_out = self.ff(cross_attn_out)
@@ -340,6 +342,9 @@ class PositionalEncoding(nn.Module):
 class Transformer(nn.Module):
     def __init__(
             self,
+            src_pad_id,
+            tgt_pad_id,
+            tgt_sos_id,
             n_src_vocab,
             n_tgt_vocab,
             n_positions,
@@ -354,6 +359,11 @@ class Transformer(nn.Module):
             n_decoder_layers=1,
     ):
         super().__init__()
+
+        self.src_pad_id = src_pad_id
+        self.tgt_pad_id = tgt_pad_id
+        self.tgt_sos_id = tgt_sos_id
+
         self.pos_enc = PositionalEncoding(d_model, n_positions)
 
         self.src_embed = nn.Embedding(n_src_vocab, d_model)  # input embedding
@@ -370,27 +380,38 @@ class Transformer(nn.Module):
 
         self.tgt_proj = nn.Linear(d_model, n_tgt_vocab, bias=bias)
 
+    def _make_src_mask(self, src: torch.Tensor) -> torch.Tensor:
+        src_mask = (src != self.src_pad_id).unsqueeze(1).unsqueeze(2)
+        return src_mask
+
+    def _make_trg_mask(self, tgt: torch.Tensor) -> torch.Tensor:
+        tgt_pad_mask = (tgt != self.tgt_pad_id).unsqueeze(1).unsqueeze(3)
+        tgt_len = tgt.shape[1]
+        tgt_sub_mask = torch.tril(torch.ones(tgt_len, tgt_len)).type(torch.ByteTensor).to(tgt.device)
+        tgt_mask = tgt_pad_mask & tgt_sub_mask
+        return tgt_mask
+
     def forward(
             self,
-            src_ids: torch.Tensor,
-            tgt_ids: torch.Tensor,
-            src_mask: Optional[torch.Tensor] = None,
-            tgt_mask: Optional[torch.Tensor] = None,
+            src_ids: torch.Tensor,  # (N, T_src)
+            tgt_ids: torch.Tensor,  # (N, T_tgt)
     ) -> torch.Tensor:
         # Encoder
-        src_emb = self.src_embed(src_ids)
+        src_mask = self._make_src_mask(src_ids)
+        tgt_mask = self._make_trg_mask(tgt_ids)
+        src_emb = self.src_embed(src_ids) # （N, T_src, d_model
         src = self.pos_enc(src_emb)
         for layer in self.encoder:
             src = layer(src, src_mask)
 
         # Decoder
-        tgt_emb = self.tgt_embed(tgt_ids)
+        tgt_emb = self.tgt_embed(tgt_ids)  # (N, T_tgt, d_model)
         tgt = self.pos_enc(tgt_emb)
         for layer in self.decoder:
             tgt = layer(tgt, src, src_mask=src_mask, tgt_mask=tgt_mask)
 
         # Logits
-        logits = self.tgt_proj(tgt)
+        logits = self.tgt_proj(tgt)  # (N, T_tgt, vocab)
         return logits
 
 

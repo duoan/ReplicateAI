@@ -204,6 +204,18 @@ wheels = [
 ]
 
 [[package]]
+name = "click"
+version = "8.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/46/61/de6cd827efad202d7057d93e0fed9294b96952e188f7384832791c7b2254/click-8.3.0.tar.gz", hash = "sha256:e7b8232224eba16f4ebe410c25ced9f7875cb5f3263ffc93cc3e8da705e229c4", size = 276943 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/db/d3/9dcc0f5797f070ec8edf30fbadfb200e71d9db6b84d211e3b2085a7589a0/click-8.3.0-py3-none-any.whl", hash = "sha256:9b9f285302c6e3064f4330c05f05b81945b2a39544279343e6e7c5f27a9baddc", size = 107295 },
+]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -473,6 +485,15 @@ wheels = [
 ]
 
 [[package]]
+name = "joblib"
+version = "1.5.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e8/5d/447af5ea094b9e4c4054f82e223ada074c552335b9b4b2d14bd9b35a67c4/joblib-1.5.2.tar.gz", hash = "sha256:3faa5c39054b2f03ca547da9b2f52fde67c06240c31853f306aea97f13647b55", size = 331077 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1e/e8/685f47e0d754320684db4425a0967f7d3fa70126bffd76110b7009a0090f/joblib-1.5.2-py3-none-any.whl", hash = "sha256:4e1f0bdbb987e6d843c70cf43714cb276623def372df3c22fe5266b2670bc241", size = 308396 },
+]
+
+[[package]]
 name = "markupsafe"
 version = "3.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -666,6 +687,21 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/6c/4f/ccdb8ad3a38e583f214547fd2f7ff1fc160c43a75af88e6aec213404b96a/networkx-3.5.tar.gz", hash = "sha256:d4c6f9cf81f52d69230866796b82afbccdec3db7ae4fbd1b65ea750feed50037", size = 2471065 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/eb/8d/776adee7bbf76365fdd7f2552710282c79a4ead5d2a46408c9043a2b70ba/networkx-3.5-py3-none-any.whl", hash = "sha256:0030d386a9a06dee3565298b4a734b68589749a544acbb6c412dc9e2489ec6ec", size = 2034406 },
+]
+
+[[package]]
+name = "nltk"
+version = "3.9.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "joblib" },
+    { name = "regex" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f9/76/3a5e4312c19a028770f86fd7c058cf9f4ec4321c6cf7526bab998a5b683c/nltk-3.9.2.tar.gz", hash = "sha256:0f409e9b069ca4177c1903c3e843eef90c7e92992fa4931ae607da6de49e1419", size = 2887629 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/60/90/81ac364ef94209c100e12579629dc92bf7a709a84af32f8c551b02c07e94/nltk-3.9.2-py3-none-any.whl", hash = "sha256:1e209d2b3009110635ed9709a67a1a3e33a10f799490fa71cf4bec218c11c88a", size = 1513404 },
 ]
 
 [[package]]
@@ -1304,7 +1340,9 @@ source = { virtual = "." }
 dependencies = [
     { name = "datasets" },
     { name = "hypothesis" },
+    { name = "nltk" },
     { name = "pytest" },
+    { name = "sacremoses" },
     { name = "sentencepiece" },
     { name = "tiktoken" },
     { name = "torch", version = "2.9.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
@@ -1322,7 +1360,9 @@ dependencies = [
 requires-dist = [
     { name = "datasets", specifier = ">=4.2.0" },
     { name = "hypothesis", specifier = ">=6.142.2" },
+    { name = "nltk", specifier = ">=3.9.2" },
     { name = "pytest", specifier = ">=8.4.2" },
+    { name = "sacremoses", specifier = ">=0.1.1" },
     { name = "sentencepiece", specifier = ">=0.2.1" },
     { name = "tiktoken", specifier = ">=0.12.0" },
     { name = "torch", marker = "sys_platform != 'linux'", specifier = ">=2.7.0", index = "https://download.pytorch.org/whl/cpu" },
@@ -1346,6 +1386,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c9/74/b3ff8e6c8446842c3f5c837e9c3dfcfe2018ea6ecef224c710c85ef728f4/requests-2.32.5.tar.gz", hash = "sha256:dbba0bac56e100853db0ea71b82b4dfd5fe2bf6d3754a8893c3af500cec7d7cf", size = 134517 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/db/4254e3eabe8020b458f1a747140d32277ec7a271daf1d235b70dc0b4e6e3/requests-2.32.5-py3-none-any.whl", hash = "sha256:2462f94637a34fd532264295e186976db0f5d453d1cdd31473c85a6a161affb6", size = 64738 },
+]
+
+[[package]]
+name = "sacremoses"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "joblib" },
+    { name = "regex" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1d/51/fbdc4af4f6e85d26169e28be3763fe50ddfd0d4bf8b871422b0788dcc4d2/sacremoses-0.1.1.tar.gz", hash = "sha256:b6fd5d3a766b02154ed80b962ddca91e1fd25629c0978c7efba21ebccf663934", size = 883188 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0b/f0/89ee2bc9da434bd78464f288fdb346bc2932f2ee80a90b2a4bbbac262c74/sacremoses-0.1.1-py3-none-any.whl", hash = "sha256:31e04c98b169bfd902144824d191825cd69220cdb4ae4bcf1ec58a7db5587b1a", size = 897476 },
 ]
 
 [[package]]
