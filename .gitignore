@@ -9,3 +9,8 @@ wheels/
 # Virtual environments
 .venv
 .idea
+*.pth
+
+tokenizer*.json
+train_history.json
+val_history.json

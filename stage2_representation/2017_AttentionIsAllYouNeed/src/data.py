@@ -1,5 +1,7 @@
+from typing import Optional
 import torch
 from datasets import load_dataset
+from datasets.arrow_dataset import Dataset as ArrowDataset
 from torch.utils.data import Dataset
 
 from tokenizer import BaseTokenizer
@@ -28,14 +30,14 @@ class Multi30KDataset(Dataset):
     """
 
     def __init__(
-            self,
-            split: str = "train",
-            src_tokenizer: BaseTokenizer = None,
-            tgt_tokenizer: BaseTokenizer = None,
-            src_tokenizer_path: str = None,
-            tgt_tokenizer_path: str = None,
-            tokenizer_type: str = "bpe",
-            max_len: int = 128,
+        self,
+        split: str = "train",
+        src_tokenizer: Optional[BaseTokenizer] = None,
+        tgt_tokenizer: Optional[BaseTokenizer] = None,
+        src_tokenizer_path: Optional[str] = None,
+        tgt_tokenizer_path: Optional[str] = None,
+        tokenizer_type: str = "bpe",
+        max_len: int = 128,
     ):
         """
         Args:
@@ -52,28 +54,40 @@ class Multi30KDataset(Dataset):
 
         # Load dataset
         print(f"Loading {split} dataset...")
-        self.dataset = load_dataset("bentrevett/multi30k", split=split)
+        self.dataset: ArrowDataset = load_dataset("bentrevett/multi30k", split=split)
 
         # Load or use provided tokenizers
         print(f"Loading tokenizers...")
 
-        if src_tokenizer is None and src_tokenizer_path is None and tokenizer_type is not None:
+        if (
+            src_tokenizer is None
+            and src_tokenizer_path is None
+            and tokenizer_type is not None
+        ):
             src_tokenizer_path = f"tokenizer_en_{tokenizer_type}.json"
 
         if src_tokenizer is not None:
             self.src_tokenizer = src_tokenizer
         elif src_tokenizer_path is not None:
-            self.src_tokenizer = self._load_tokenizer(src_tokenizer_path, tokenizer_type)
+            self.src_tokenizer = self._load_tokenizer(
+                src_tokenizer_path, tokenizer_type
+            )
         else:
             raise ValueError("Must provide either src_tokenizer or src_tokenizer_path")
 
-        if tgt_tokenizer is None and tgt_tokenizer_path is None and tokenizer_type is not None:
+        if (
+            tgt_tokenizer is None
+            and tgt_tokenizer_path is None
+            and tokenizer_type is not None
+        ):
             tgt_tokenizer_path = f"tokenizer_de_{tokenizer_type}.json"
 
         if tgt_tokenizer is not None:
             self.tgt_tokenizer = tgt_tokenizer
         elif tgt_tokenizer_path is not None:
-            self.tgt_tokenizer = self._load_tokenizer(tgt_tokenizer_path, tokenizer_type)
+            self.tgt_tokenizer = self._load_tokenizer(
+                tgt_tokenizer_path, tokenizer_type
+            )
         else:
             raise ValueError("Must provide either tgt_tokenizer or tgt_tokenizer_path")
 
@@ -102,6 +116,36 @@ class Multi30KDataset(Dataset):
         print(f"  UNK: {self.unk_id}")
         print(f"  SOS: {self.sos_id}")
         print(f"  EOS: {self.eos_id}")
+
+        # preprocess
+        self.dataset = self.dataset.map(self._encode)
+        self.dataset.set_format(
+            type="torch",
+            columns=["src_ids", "tgt_ids"],
+        )
+
+    def _encode(self, item):
+        # Encode with padding
+        src_ids = self.src_tokenizer.encode(
+            item["en"],
+            add_special_tokens=True,
+            max_length=self.max_len,
+            padding=True,
+        )
+
+        tgt_ids = self.tgt_tokenizer.encode(
+            item["de"],
+            add_special_tokens=True,
+            max_length=self.max_len,
+            padding=True,
+        )
+
+        return {
+            "src_ids": src_ids,
+            "tgt_ids": tgt_ids,
+            "src_txt": item["en"],
+            "tgt_txt": item["de"],
+        }
 
     def _load_tokenizer(self, path: str, tokenizer_type: str) -> BaseTokenizer:
         """Load tokenizer based on type"""
@@ -133,38 +177,24 @@ class Multi30KDataset(Dataset):
 
     def _verify_special_tokens(self):
         """Verify that source and target tokenizers have consistent special token IDs"""
-        assert self.src_tokenizer.pad_id == self.tgt_tokenizer.pad_id, "PAD ID mismatch!"
-        assert self.src_tokenizer.sos_id == self.tgt_tokenizer.sos_id, "SOS ID mismatch!"
-        assert self.src_tokenizer.eos_id == self.tgt_tokenizer.eos_id, "EOS ID mismatch!"
-        assert self.src_tokenizer.unk_id == self.tgt_tokenizer.unk_id, "UNK ID mismatch!"
+        assert (
+            self.src_tokenizer.pad_id == self.tgt_tokenizer.pad_id
+        ), "PAD ID mismatch!"
+        assert (
+            self.src_tokenizer.sos_id == self.tgt_tokenizer.sos_id
+        ), "SOS ID mismatch!"
+        assert (
+            self.src_tokenizer.eos_id == self.tgt_tokenizer.eos_id
+        ), "EOS ID mismatch!"
+        assert (
+            self.src_tokenizer.unk_id == self.tgt_tokenizer.unk_id
+        ), "UNK ID mismatch!"
 
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, idx):
-        item = self.dataset[idx]
-
-        # Encode with padding
-        src_ids = self.src_tokenizer.encode(
-            item["en"],
-            add_special_tokens=True,
-            max_length=self.max_len,
-            padding=True,
-        )
-
-        tgt_ids = self.tgt_tokenizer.encode(
-            item["de"],
-            add_special_tokens=True,
-            max_length=self.max_len,
-            padding=True,
-        )
-
-        return {
-            "src_ids": src_ids,
-            "tgt_ids": tgt_ids,
-            "src_txt": item["en"],
-            "tgt_txt": item["de"],
-        }
+        return self.dataset[idx]
 
     def decode_src(self, token_ids, skip_special_tokens=True):
         """Decode source language tokens"""
@@ -181,8 +211,8 @@ def test_multi30k():
 
     for batch in dataloader:
         print()
-        print("SRC TXT:", batch['src_txt'][0])
-        print("TGT TXT:", batch['tgt_txt'][0])
-        print("SRC IDS:", batch['src_ids'][0])
-        print("TGT IDS:", batch['tgt_ids'][0])
+        print("SRC TXT:", batch["src_txt"][0])
+        print("TGT TXT:", batch["tgt_txt"][0])
+        print("SRC IDS:", batch["src_ids"][0])
+        print("TGT IDS:", batch["tgt_ids"][0])
         break
