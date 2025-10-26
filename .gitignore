@@ -12,5 +12,5 @@ wheels/
 *.pth
 
 tokenizer*.json
-train_history.json
-val_history.json
+
+wandb

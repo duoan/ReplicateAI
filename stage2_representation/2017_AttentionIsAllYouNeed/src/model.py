@@ -1,5 +1,6 @@
-from typing import Optional
+from typing import Dict, Optional, Tuple, Union
 
+from datasets import List
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -16,11 +17,11 @@ class ScaledDotProductAttention(nn.Module):
         self.dropout = nn.Dropout(dropout_prob)
 
     def forward(
-            self,
-            query: torch.Tensor,
-            key: torch.Tensor,
-            value: torch.Tensor,
-            mask: Optional[torch.Tensor] = None,
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -37,15 +38,17 @@ class ScaledDotProductAttention(nn.Module):
         d_key = key.size(-1)
         # (N, H, T, d_head) @ (N, H, d_head, T)
         # => (N, n_heads, T, T)
-        scale = d_key ** -0.5
+        scale = d_key**-0.5
         scores = torch.matmul(query, key.transpose(-2, -1)) * scale
         if mask is not None:
             if mask.dtype == torch.bool:
-                scores = scores.masked_fill(~mask, -10000)
+                scores = scores.masked_fill(~mask, -1e-9)
             else:
-                scores = scores.masked_fill(mask == 0, -10000)
+                scores = scores.masked_fill(mask == 0, -1e-9)
 
-        attn_weights = F.softmax(scores, dim=-1)  # very q weights cross keys
+        attn_weights = F.softmax(
+            scores, dim=-1
+        )  # (N, H, T_query, T_key) very q weights cross keys
         attn_weights = self.dropout(attn_weights)  # (N, H, T, T)
 
         # (N, H, T, T) @ (N, H, T, d_head)
@@ -58,11 +61,11 @@ class ScaledDotProductAttention(nn.Module):
 class MultiHeadAttention(nn.Module):
 
     def __init__(
-            self,
-            d_model=512,
-            n_heads=8,
-            dropout_prob=0.1,
-            bias=False,
+        self,
+        d_model=512,
+        n_heads=8,
+        dropout_prob=0.1,
+        bias=False,
     ) -> None:
         super().__init__()
         assert d_model % n_heads == 0, f"{d_model=} must be x times of {n_heads=}"
@@ -101,11 +104,11 @@ class MultiHeadAttention(nn.Module):
         return x.transpose(1, 2).contiguous().view(N, T, H * d_head)
 
     def forward(
-            self,
-            query: torch.Tensor,
-            key: Optional[torch.Tensor] = None,
-            value: Optional[torch.Tensor] = None,
-            mask: Optional[torch.Tensor] = None,
+        self,
+        query: torch.Tensor,
+        key: Optional[torch.Tensor] = None,
+        value: Optional[torch.Tensor] = None,
+        mask: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -115,7 +118,7 @@ class MultiHeadAttention(nn.Module):
             mask:  (N, 1, 1, T) or (N, H, T, T), bool
         Returns:
             out: (N, T, d_model)
-            attn_weights: (N, H, T, T)， for visualization analysis, distillation, feature selection, pruning etc.
+            attn_weights: (N, H, T, T), for visualization analysis, distillation, feature selection, pruning etc.
         """
         if key is None:  # self attention
             key = query
@@ -126,15 +129,15 @@ class MultiHeadAttention(nn.Module):
 
         # Linear projections
         # (N, T, d_model) @ (d_model, d_model) => (N, T, d_model)
-        query = self.W_q(query)  # (N, T, d_model)
-        key = self.W_k(key)  # (N, T, d_model)
-        value = self.W_v(value)  # (N, T, d_model)
+        query_projected = self.W_q(query)  # (N, T, d_model)
+        key_projected = self.W_k(key)  # (N, T, d_model)
+        value_projected = self.W_v(value)  # (N, T, d_model)
 
         # Split heads
         # (N, T, d_model) => (N, T, H, d_head)
-        query = self._split_heads(query)  # (N, T, H, d_head)
-        key = self._split_heads(key)  # (N, T, H, d_head)
-        value = self._split_heads(value)  # (N, T, H, d_head)
+        query = self._split_heads(query_projected)  # (N, T, H, d_head)
+        key = self._split_heads(key_projected)  # (N, T, H, d_head)
+        value = self._split_heads(value_projected)  # (N, T, H, d_head)
 
         attn_out, attn_weights = self.attention(query, key, value, mask)
         # attn_out (N, H, T, d_head)
@@ -150,12 +153,12 @@ class MultiHeadAttention(nn.Module):
 class FeedForward(nn.Module):
 
     def __init__(
-            self,
-            d_model=512,
-            d_ff=2048,
-            dropout_prob=0.1,
-            bias=True,
-            activation='relu',
+        self,
+        d_model=512,
+        d_ff=2048,
+        dropout_prob=0.1,
+        bias=True,
+        activation="relu",
     ):
         super().__init__()
         self.d_model = d_model
@@ -165,9 +168,9 @@ class FeedForward(nn.Module):
         # down sampling
         self.reduction = nn.Linear(d_ff, d_model, bias=bias)  # (d_ff, d_model)
 
-        if activation == 'relu':
+        if activation == "relu":
             self.activation = nn.ReLU()
-        elif activation == 'gelu':
+        elif activation == "gelu":
             self.activation = nn.GELU()
         else:
             raise NotImplementedError(f"Unsupported activation: {activation}")
@@ -176,10 +179,10 @@ class FeedForward(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-           Args:
-               x: (N, T, d_model)
-           Returns:
-               out: (N, T, d_model)
+        Args:
+            x: (N, T, d_model)
+        Returns:
+            out: (N, T, d_model)
         """
         out = self.expansion(x)  # (N, T, d_model) @ (d_model, d_ff) => (N, T, d_ff)
         out = self.activation(out)  # nonlinearity
@@ -204,14 +207,14 @@ class TransformerEncoderLayer(nn.Module):
     """
 
     def __init__(
-            self,
-            d_model=512,
-            n_heads=8,
-            d_ff=2048,
-            dropout_prob=0.1,
-            bias=False,
-            activation='relu',
-            norm_eps=1e-6,
+        self,
+        d_model=512,
+        n_heads=8,
+        d_ff=2048,
+        dropout_prob=0.1,
+        bias=False,
+        activation="relu",
+        norm_eps=1e-6,
     ):
         super().__init__()
         self.d_model = d_model
@@ -228,10 +231,11 @@ class TransformerEncoderLayer(nn.Module):
         self.dropout = nn.Dropout(dropout_prob)
 
     def forward(
-            self,
-            src: torch.Tensor,
-            src_mask: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
+        self,
+        src: torch.Tensor,
+        src_mask: Optional[torch.Tensor] = None,
+        return_attn=False,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
         Args:
             src:    (N, T, d_model) - input embeddings or previous layer output
@@ -249,20 +253,23 @@ class TransformerEncoderLayer(nn.Module):
         out = attn_out + self.dropout(ff_out)  # residual connection
         out = self.norm2(out)  # Post-LN
 
-        return out
+        if return_attn:
+            return out, attn_weights
+        else:
+            return out
 
 
 class TransformerDecoderLayer(nn.Module):
 
     def __init__(
-            self,
-            d_model=512,
-            n_heads=8,
-            d_ff=2048,
-            dropout_prob=0.1,
-            bias=False,
-            activation='relu',
-            norm_eps=1e-6,
+        self,
+        d_model=512,
+        n_heads=8,
+        d_ff=2048,
+        dropout_prob=0.1,
+        bias=False,
+        activation="relu",
+        norm_eps=1e-6,
     ):
         super().__init__()
         self.d_model = d_model
@@ -281,12 +288,13 @@ class TransformerDecoderLayer(nn.Module):
         self.dropout3 = nn.Dropout(dropout_prob)
 
     def forward(
-            self,
-            tgt: torch.Tensor,
-            src: torch.Tensor,
-            tgt_mask: Optional[torch.Tensor] = None,
-            src_mask: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
+        self,
+        tgt: torch.Tensor,
+        src: torch.Tensor,
+        tgt_mask: Optional[torch.Tensor] = None,
+        src_mask: Optional[torch.Tensor] = None,
+        return_attn=False,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
         """Pass the inputs (and mask) through the decoder layer.
 
         Args:
@@ -298,19 +306,24 @@ class TransformerDecoderLayer(nn.Module):
 
         """
         # self attention for target
-        tgt_self_attn_out, self_attn_weights = self.self_attn(tgt, mask=tgt_mask)
+        tgt_self_attn_out, tgt_self_attn_weights = self.self_attn(tgt, mask=tgt_mask)
         tgt_self_attn_out = self.dropout1(tgt_self_attn_out)
         tgt_self_attn_out = self.norm1(tgt + tgt_self_attn_out)
 
         # cross attention with source
-        cross_attn_out, cross_attn_weights = self.cross_attn(tgt_self_attn_out, src, src, src_mask)
+        cross_attn_out, cross_attn_weights = self.cross_attn(
+            tgt_self_attn_out, src, src, src_mask
+        )
         cross_attn_out = self.norm2(tgt_self_attn_out + self.dropout2(cross_attn_out))
 
         # feed forward
         ff_out = self.ff(cross_attn_out)
         out = self.norm3(cross_attn_out + self.dropout3(ff_out))
 
-        return out
+        if return_attn:
+            return out, tgt_self_attn_weights, cross_attn_weights
+        else:
+            return out
 
 
 class PositionalEncoding(nn.Module):
@@ -319,7 +332,9 @@ class PositionalEncoding(nn.Module):
 
         pe = torch.zeros(n_position, d_model)  # (n_position, d_model)
 
-        position = torch.arange(0, n_position, dtype=torch.float).unsqueeze(1)  # (n_position, 1)
+        position = torch.arange(0, n_position, dtype=torch.float).unsqueeze(
+            1
+        )  # (n_position, 1)
 
         div_base = 10000
         for i in range(0, d_model, 2):
@@ -330,33 +345,34 @@ class PositionalEncoding(nn.Module):
                 pe[:, i + 1] = torch.cos(angle).squeeze(1)  # odd dims: cos
         # add batch dimension
         pe = pe.unsqueeze(0)  # (1, n_position, d_model)
-        self.register_buffer('pe', pe)
+        self.register_buffer("pe", pe)
 
     def forward(self, x):
         # x: (N, T, d_model)
         T = x.size(1)
         # (N, T, d_model) + (1, T, d_model) ==> (N, T, d_model)
-        return x + self.pe[:, :T]
+        pe = self.get_buffer("pe")
+        return x + pe[:, :T]
 
 
 class Transformer(nn.Module):
     def __init__(
-            self,
-            src_pad_id,
-            tgt_pad_id,
-            tgt_sos_id,
-            n_src_vocab,
-            n_tgt_vocab,
-            n_positions,
-            d_model=512,
-            n_heads=8,
-            d_ff=2048,
-            dropout_prob=0.1,
-            bias=False,
-            activation="gelu",
-            norm_eps=1e-6,
-            n_encoder_layers=1,
-            n_decoder_layers=1,
+        self,
+        src_pad_id,
+        tgt_pad_id,
+        tgt_sos_id,
+        n_src_vocab,
+        n_tgt_vocab,
+        n_positions,
+        d_model=512,
+        n_heads=8,
+        d_ff=2048,
+        dropout_prob=0.1,
+        bias=False,
+        activation="gelu",
+        norm_eps=1e-6,
+        n_encoder_layers=1,
+        n_decoder_layers=1,
     ):
         super().__init__()
 
@@ -367,16 +383,24 @@ class Transformer(nn.Module):
         self.pos_enc = PositionalEncoding(d_model, n_positions)
 
         self.src_embed = nn.Embedding(n_src_vocab, d_model)  # input embedding
-        self.encoder = nn.ModuleList([
-            TransformerEncoderLayer(d_model, n_heads, d_ff, dropout_prob, bias, activation, norm_eps)
-            for _ in range(n_encoder_layers)
-        ])
+        self.encoder = nn.ModuleList(
+            [
+                TransformerEncoderLayer(
+                    d_model, n_heads, d_ff, dropout_prob, bias, activation, norm_eps
+                )
+                for _ in range(n_encoder_layers)
+            ]
+        )
 
         self.tgt_embed = nn.Embedding(n_tgt_vocab, d_model)  # output embedding
-        self.decoder = nn.ModuleList([
-            TransformerDecoderLayer(d_model, n_heads, d_ff, dropout_prob, bias, activation, norm_eps)
-            for _ in range(n_decoder_layers)
-        ])
+        self.decoder = nn.ModuleList(
+            [
+                TransformerDecoderLayer(
+                    d_model, n_heads, d_ff, dropout_prob, bias, activation, norm_eps
+                )
+                for _ in range(n_decoder_layers)
+            ]
+        )
 
         self.tgt_proj = nn.Linear(d_model, n_tgt_vocab, bias=bias)
 
@@ -387,32 +411,79 @@ class Transformer(nn.Module):
     def _make_trg_mask(self, tgt: torch.Tensor) -> torch.Tensor:
         tgt_pad_mask = (tgt != self.tgt_pad_id).unsqueeze(1).unsqueeze(3)
         tgt_len = tgt.shape[1]
-        tgt_sub_mask = torch.tril(torch.ones(tgt_len, tgt_len)).type(torch.ByteTensor).to(tgt.device)
+        tgt_sub_mask = torch.tril(torch.ones(tgt_len, tgt_len)).to(tgt.device).bool()
         tgt_mask = tgt_pad_mask & tgt_sub_mask
         return tgt_mask
 
     def forward(
-            self,
-            src_ids: torch.Tensor,  # (N, T_src)
-            tgt_ids: torch.Tensor,  # (N, T_tgt)
-    ) -> torch.Tensor:
+        self,
+        src_ids: torch.Tensor,  # (N, T_src)
+        tgt_ids: torch.Tensor,  # (N, T_tgt)
+        return_attn=False,
+    ) -> Union[torch.Tensor, tuple[torch.Tensor, dict[str, list[torch.Tensor]]]]:
         # Encoder
         src_mask = self._make_src_mask(src_ids)
         tgt_mask = self._make_trg_mask(tgt_ids)
-        src_emb = self.src_embed(src_ids) # （N, T_src, d_model
+        src_emb = self.src_embed(src_ids)  # （N, T_src, d_model
         src = self.pos_enc(src_emb)
+
+        encoder_attn_maps = []
         for layer in self.encoder:
-            src = layer(src, src_mask)
+            if return_attn:
+                src, attn = layer(src, src_mask, return_attn=True)
+                encoder_attn_maps.append(attn)
+            else:
+                src = layer(src, src_mask)
 
         # Decoder
         tgt_emb = self.tgt_embed(tgt_ids)  # (N, T_tgt, d_model)
         tgt = self.pos_enc(tgt_emb)
+        decoder_self_attn_maps, decoder_cross_attn_maps = [], []
         for layer in self.decoder:
-            tgt = layer(tgt, src, src_mask=src_mask, tgt_mask=tgt_mask)
+            if return_attn:
+                tgt, self_attn, cross_attn = layer(
+                    tgt, src, src_mask=src_mask, tgt_mask=tgt_mask, return_attn=True
+                )
+                decoder_self_attn_maps.append(self_attn)
+                decoder_cross_attn_maps.append(cross_attn)
+            else:
+                tgt = layer(tgt, src, src_mask=src_mask, tgt_mask=tgt_mask)
 
         # Logits
         logits = self.tgt_proj(tgt)  # (N, T_tgt, vocab)
-        return logits
+
+        if return_attn:
+            return logits, {
+                "encoder": encoder_attn_maps,
+                "decoder_self": decoder_self_attn_maps,
+                "decoder_cross": decoder_cross_attn_maps,
+            }
+        else:
+            return logits
+
+    def greedy_decode(self, src, max_len=100):
+        self.eval()
+        src_mask = self._make_src_mask(src)
+        src_emb = self.pos_enc(self.src_embed(src))
+        memory = src_emb
+        for layer in self.encoder:
+            memory = layer(memory, src_mask)
+
+        N = src.size(0)
+        ys = torch.full((N, 1), self.tgt_sos_id, dtype=torch.long, device=src.device)
+
+        for i in range(max_len - 1):
+            tgt_mask = self._make_trg_mask(ys)
+            tgt_emb = self.pos_enc(self.tgt_embed(ys))
+            out = tgt_emb
+            for layer in self.decoder:
+                out = layer(out, memory, src_mask=src_mask, tgt_mask=tgt_mask)
+            logits = self.tgt_proj(out[:, -1, :])
+            next_token = logits.argmax(dim=-1).unsqueeze(1)
+            ys = torch.cat([ys, next_token], dim=1)
+            if (next_token == self.tgt_pad_id).all():
+                break
+        return ys
 
 
 def test_scaled_dot_product_attention_causal_only():

@@ -1,20 +1,37 @@
-import json
+from datetime import datetime
+import os
+from pathlib import Path
 import time
 
+import matplotlib.pyplot as plt
+import io
+from PIL import Image
 import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import optim
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
-
+from torchview import draw_graph
 from data import Multi30KDataset
 from model import Transformer
 from optimizer import NoamScheduler
-from tokenizer import BaseTokenizer
+from tokenizer import get_tokenizer
+import sacrebleu
+import wandb
+import getpass
+from concurrent.futures import ThreadPoolExecutor
+
+SCRIPT_DIR = Path(__file__).resolve().parent
 
 torch.autograd.set_detect_anomaly(True)
 device = torch.accelerator.current_accelerator()
+
+src_tokenizer = get_tokenizer(str(SCRIPT_DIR / "tokenizer_en.json"))
+tgt_tokenizer = get_tokenizer(str(SCRIPT_DIR / "tokenizer_de.json"))
+
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+executor = ThreadPoolExecutor(max_workers=4)
 
 
 def train(model, dataloader, optimizer, scheduler, pad_idx):
@@ -52,6 +69,26 @@ def train(model, dataloader, optimizer, scheduler, pad_idx):
     return avg_loss, ppl
 
 
+def attention_to_wandb_image(tokens_x, tokens_y, attn_2d, title):
+    fig, ax = plt.subplots(figsize=(8, 8))
+    im = ax.imshow(attn_2d, cmap="viridis")
+
+    ax.set_xticks(np.arange(len(tokens_x)))
+    ax.set_yticks(np.arange(len(tokens_y)))
+    ax.set_xticklabels(tokens_x, rotation=90, fontsize=8)
+    ax.set_yticklabels(tokens_y, fontsize=8)
+
+    ax.set_title(title)
+    fig.colorbar(im, ax=ax)
+
+    buf = io.BytesIO()
+    plt.tight_layout()
+    plt.savefig(buf, format="png")
+    plt.close(fig)
+    buf.seek(0)
+    return wandb.Image(Image.open(buf))
+
+
 def evaluate(model, dataloader, pad_idx):
     model.eval()
     total_loss = 0
@@ -72,7 +109,6 @@ def evaluate(model, dataloader, pad_idx):
                 label_smoothing=0.1,
             )
             total_loss += loss.item()
-
         progress.close()
 
     avg_loss = total_loss / len(dataloader)
@@ -80,12 +116,157 @@ def evaluate(model, dataloader, pad_idx):
     return avg_loss, ppl
 
 
+def visualize_attention(
+    model,
+    dataloader,
+    max_heads: int = 4,
+    max_samples: int = 4,
+):
+    """Visualize attention for each sample in the first batch."""
+    model.eval()
+    batch = next(iter(dataloader))
+    src, tgt = batch["src_ids"].to(device), batch["tgt_ids"].to(device)
+    tgt_in = tgt[:, :-1]
+
+    with torch.inference_mode():
+        _, attn_dict = model(src, tgt_in, return_attn=True)
+
+    # --- Encoder self-attention ---
+    print("Visualizing encoder attentions")
+    for layer_i, attn in enumerate(attn_dict["encoder"]):
+        log_dict = {}
+        # attn shape: (N, H, T, T)
+        N, H, Tq, Tk = attn.shape
+        for n in range(min(N, max_samples)):
+            valid_len = (src[n] != src_tokenizer.pad_id).sum().item()
+            src_tokens = src_tokenizer.convert_ids_to_tokens(
+                src[n][:valid_len].tolist()
+            )
+            for head_i in range(min(H, max_heads)):
+                attn_2d = attn[n, head_i].detach().cpu().numpy()
+                attn_2d = attn_2d[:valid_len, :valid_len]
+                log_dict[f"encoder/sample_{n}/layer_{layer_i}/head_{head_i}"] = (
+                    attention_to_wandb_image(
+                        src_tokens,
+                        src_tokens,
+                        attn_2d,
+                        f"Encoder L{layer_i} H{head_i} Sample {n}",
+                    )
+                )
+        wandb.log(log_dict)
+
+    # --- Decoder self-attention ---
+    print("Visualizing decoder self attention")
+    for layer_i, attn in enumerate(attn_dict["decoder_self"]):
+        log_dict = {}
+        N, H, Tq, Tk = attn.shape
+        for n in range(min(N, max_samples)):
+            valid_len = (tgt[n] != tgt_tokenizer.pad_id).sum().item()
+            tgt_tokens = tgt_tokenizer.convert_ids_to_tokens(
+                tgt[n][:valid_len].tolist()
+            )
+
+            for head_i in range(min(H, max_heads)):
+                attn_2d = attn[n, head_i].detach().cpu().numpy()
+                attn_2d = attn_2d[:valid_len, :valid_len]
+
+                log_dict[f"decoder_self/sample_{n}/layer_{layer_i}/head_{head_i}"] = (
+                    attention_to_wandb_image(
+                        tgt_tokens,
+                        tgt_tokens,
+                        attn_2d,
+                        f"Decoder Self L{layer_i} H{head_i} Sample {n}",
+                    )
+                )
+        wandb.log(log_dict)
+
+    # ---------------- Decoder cross-attention ----------------
+    print("Visualizing decoder cross attention")
+    for layer_i, attn in enumerate(attn_dict["decoder_cross"]):
+        log_dict = {}
+        N, H, Tq, Tk = attn.shape
+        for n in range(min(N, max_samples)):
+            src_valid_len = (src[n] != src_tokenizer.pad_id).sum().item()
+            tgt_valid_len = (tgt[n] != tgt_tokenizer.pad_id).sum().item()
+            src_tokens = src_tokenizer.convert_ids_to_tokens(
+                src[n][:src_valid_len].tolist()
+            )
+            tgt_tokens = tgt_tokenizer.convert_ids_to_tokens(
+                tgt[n][:tgt_valid_len].tolist()
+            )
+
+            for head_i in range(min(H, max_heads)):
+                attn_2d = attn[n, head_i].detach().cpu().numpy()
+                attn_2d = attn_2d[:tgt_valid_len, :src_valid_len]
+
+                log_dict[f"decoder_cross/sample_{n}/layer_{layer_i}/head_{head_i}"] = (
+                    attention_to_wandb_image(
+                        src_tokens,
+                        tgt_tokens,
+                        attn_2d,
+                        f"Decoder Cross L{layer_i} H{head_i} Sample {n}",
+                    )
+                )
+        wandb.log(log_dict)
+
+
+def submit_attention_visualization(
+    model,
+    dataloader,
+    max_heads=4,
+    max_samples=4,
+):
+    """Submit visualization to background thread."""
+
+    def task():
+        try:
+            visualize_attention(
+                model=model,
+                dataloader=dataloader,
+                max_heads=max_heads,
+                max_samples=max_samples,
+            )
+        except Exception as e:
+            print(f"[WARN] Visualization thread failed: {e}")
+
+    executor.submit(task)
+
+
+def compute_bleu(
+    model: Transformer,
+    dataloader,
+    tgt_tokenizer,
+    max_len=128,
+) -> float:
+    model.eval()
+    references = []
+    hypotheses = []
+
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Evaluating BLEU", dynamic_ncols=True):
+            src = batch["src_ids"].to(device)
+            preds = model.greedy_decode(src, max_len=max_len)
+            for i in range(src.size(0)):
+                pred_tokens = tgt_tokenizer.decode(
+                    preds[i].tolist(), skip_special_tokens=True
+                )
+                tgt_tokens = tgt_tokenizer.decode(
+                    batch["tgt_ids"][i].tolist(), skip_special_tokens=True
+                )
+
+                hypotheses.append(pred_tokens)
+                references.append(tgt_tokens)
+
+    bleu = sacrebleu.corpus_bleu(hypotheses, references)
+
+    print(f"BLEU score = {bleu.score:.2f}")
+    return bleu.score
+
+
 def main():
     torch.manual_seed(42)
-    torch.set_float32_matmul_precision("high")
+    batch_size = 128
 
-    src_tokenizer = BaseTokenizer.load("tokenizer_en_bpe.json")
-    tgt_tokenizer = BaseTokenizer.load("tokenizer_de_bpe.json")
     train_dataset = Multi30KDataset(
         split="train", src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer
     )
@@ -95,11 +276,32 @@ def main():
     test_dataset = Multi30KDataset(
         split="test", src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer
     )
-
     train_loader = DataLoader(
-        train_dataset, batch_size=32, num_workers=4, pin_memory=True
+        train_dataset, batch_size=batch_size, num_workers=4, pin_memory=True
     )
-    val_loader = DataLoader(val_dataset, batch_size=32, num_workers=4, pin_memory=True)
+    val_loader = DataLoader(
+        val_dataset, batch_size=batch_size, num_workers=4, pin_memory=True
+    )
+
+    run = wandb.init(
+        entity="reproduce-ai",
+        project="2017_AttentionIsAllYouNeed",
+        config={
+            "src_pad_id": train_dataset.pad_id,
+            "tgt_pad_id": train_dataset.pad_id,
+            "tgt_sos_id": train_dataset.eos_id,
+            "n_src_vocab": train_dataset.vocab_size,
+            "n_tgt_vocab": train_dataset.vocab_size,
+            "n_positions": train_dataset.max_len,
+            "n_encoder_layers": 6,
+            "n_decoder_layers": 6,
+            "d_model": 512,
+            "n_heads": 8,
+            "d_ff": 2048,
+            "dropout_prob": 0.1,
+        },
+        id=f"{getpass.getuser()}-multi30k-{datetime.now().strftime("%Y%m%d-%H%M%S")}",
+    )
 
     model = Transformer(
         src_pad_id=train_dataset.pad_id,
@@ -108,11 +310,24 @@ def main():
         n_src_vocab=train_dataset.vocab_size,
         n_tgt_vocab=train_dataset.vocab_size,
         n_positions=train_dataset.max_len,
-        n_encoder_layers=2,
-        n_decoder_layers=2,
-        d_model=128,
-        n_heads=4,
+        n_encoder_layers=6,
+        n_decoder_layers=6,
+        d_model=512,
+        n_heads=8,
+        d_ff=2048,
+        dropout_prob=0.1,
     ).to(device)
+
+    # visualize the model architecture
+    example_input = next(iter(train_loader))
+    draw_graph(
+        model,
+        input_data=[example_input["src_ids"], example_input["tgt_ids"][:, :-1]],
+        expand_nested=True,
+        save_graph=True,
+        graph_dir="BT",
+        filename=str(SCRIPT_DIR.parent / "figures" / "model"),
+    )
 
     optimizer = optim.Adam(model.parameters(), lr=1.0, betas=(0.9, 0.98), eps=1e-9)
     scheduler = NoamScheduler(optimizer, d_model=128, warmup_steps=4000)
@@ -124,7 +339,7 @@ def main():
     patience = 10
     train_history = []
     val_history = []
-    for epoch in range(1, 100):
+    for epoch in range(1, 101):
         print(f"[Epoch {epoch:02}] Starting data loading...")
         start = time.time()
         train_loss, train_ppl = train(
@@ -142,11 +357,22 @@ def main():
         )
         train_history.append((train_loss, train_ppl))
 
+        submit_attention_visualization(model, val_loader)
+
         val_loss, val_ppl = evaluate(model, val_loader, train_dataset.pad_id)
         print(
             f"Validation Loss: {val_loss:.4f} | Last Best Loss: {best_val_loss:.4f} | PPL: {val_ppl:.2f}\n"
         )
         val_history.append((val_loss, val_ppl))
+
+        run.log(
+            {
+                "train_loss": train_loss,
+                "train_ppl": train_ppl,
+                "val_loss": val_loss,
+                "val_ppl": val_ppl,
+            }
+        )
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -159,11 +385,18 @@ def main():
                 )
                 break
 
-    torch.save(model.state_dict(), "model.pth")
-    with open("train_history.json", "w+") as f:
-        json.dump(train_history, f)
-    with open("val_history.json", "w+") as f:
-        json.dump(val_history, f)
+    print("Evaluating BLEU on test set...")
+    test_loader = DataLoader(
+        test_dataset, batch_size=batch_size, num_workers=4, pin_memory=True
+    )
+    bleu_score = compute_bleu(model, test_loader, tgt_tokenizer, max_len=128)
+    print(f"Final BLEU score: {bleu_score:.2f}")
+
+    torch.save(model.state_dict(), SCRIPT_DIR / "model.pth")
+    run.log({"bleu_score": bleu_score})
+    run.log_model("model.path", "model")
+    executor.shutdown()
+    run.finish()
 
 
 if __name__ == "__main__":
