@@ -97,7 +97,7 @@ def train(model, dataloader, optimizer, scheduler, pad_idx, rank, world_size):
             logits.reshape(-1, logits.size(-1)),
             tgt_out.reshape(-1),
             ignore_index=pad_idx,
-            label_smoothing=0.1,
+            label_smoothing=0.05,
         )
 
         # Check for NaN/Inf
@@ -178,7 +178,7 @@ def evaluate(model, dataloader, pad_idx, rank, world_size):
                 logits.reshape(-1, logits.size(-1)),
                 tgt_out.reshape(-1),
                 ignore_index=pad_idx,
-                label_smoothing=0.1,
+                label_smoothing=0.05,
             )
             
             # Check for NaN/Inf
@@ -469,7 +469,11 @@ def main():
 
     # Create optimizer and scheduler
     optimizer = optim.Adam(model.parameters(), lr=1.0, betas=(0.9, 0.98), eps=1e-9)
-    scheduler = NoamScheduler(optimizer, d_model=128, warmup_steps=4000)
+
+    steps_per_epoch = len(train_dataset) // (batch_size_per_gpu * world_size)
+    warmup_steps = steps_per_epoch * 2  # 2 epochs warmup
+
+    scheduler = NoamScheduler(optimizer, d_model=512, warmup_steps=warmup_steps)
 
     if rank == 0:
         print(f"Initial LR from scheduler: {scheduler.get_last_lr()[0]:.2e}")

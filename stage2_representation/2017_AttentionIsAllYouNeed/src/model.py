@@ -400,11 +400,13 @@ class Transformer(nn.Module):
         self.tgt_proj = nn.Linear(d_model, n_tgt_vocab, bias=bias)
 
     def _make_src_mask(self, src: torch.Tensor) -> torch.Tensor:
+        # only padding mask
         # Shape: (N, 1, 1, T_src) - for masking padding in keys
         src_mask = (src != self.src_pad_id).unsqueeze(1).unsqueeze(2)
         return src_mask
 
     def _make_trg_mask(self, tgt: torch.Tensor) -> torch.Tensor:
+        # padding + causal mask
         N, tgt_len = tgt.shape
 
         # Padding mask: (N, 1, 1, T_tgt) - for masking padding in keys
@@ -529,8 +531,8 @@ def test_transformer_attentions():
 
     src = torch.tensor([[1, 2, 3, 4, 5]])  # (1, 5) - key, value
     tgt = torch.tensor([[1, 2, 3]])  # (1, 3) query
-
-    logits, attn_maps = model(src, tgt, return_attn=True)
+    with torch.no_grad():
+        logits, attn_maps = model(src, tgt, return_attn=True)
 
     encoder_self_attn = attn_maps["encoder"][0]  # (1, 2, 5, 5)
     print("Encoder self attention shape:", encoder_self_attn.shape)
@@ -547,3 +549,101 @@ def test_transformer_attentions():
     print("Decoder cross attention weights:\n", decoder_cross_attn[0, 0])
 
     print("Sum along src dim:", decoder_cross_attn.sum(dim=-1))
+
+
+def test_qkv_projections():
+    """Test if Q, K, V projections produce different vectors"""
+    model = Transformer(
+        src_pad_id=0, tgt_pad_id=0, tgt_sos_id=1,
+        n_src_vocab=50000, n_tgt_vocab=50000, n_positions=128,
+        d_model=64, n_heads=2, n_encoder_layers=1, n_decoder_layers=1
+    )
+
+    src = torch.tensor([[1, 2, 3, 4, 5]])
+
+    # Get embedding + positional encoding
+    src_emb = model.src_embed(src)
+    src_with_pos = model.pos_enc(src_emb)
+
+    print("Input embeddings shape:", src_with_pos.shape)
+    print("Input embeddings:\n", src_with_pos[0])
+
+    # Get attention layer from first encoder layer
+    attn_layer = model.encoder[0].attn
+
+    # Project to Q, K, V
+    Q = attn_layer.W_q(src_with_pos)
+    K = attn_layer.W_k(src_with_pos)
+    V = attn_layer.W_v(src_with_pos)
+
+    print("\nQuery projections:\n", Q[0])
+    print("\nKey projections:\n", K[0])
+
+    # Compute similarity
+    Q_norm = F.normalize(Q[0], dim=-1)
+    K_norm = F.normalize(K[0], dim=-1)
+
+    similarity = torch.matmul(Q_norm, K_norm.T)
+    print("\nQ-K similarity matrix (should have variation):\n", similarity)
+
+
+def test_attention_diversity():
+    """Test if attention produces different weights for different queries"""
+    model = Transformer(
+        src_pad_id=0, tgt_pad_id=0, tgt_sos_id=1,
+        n_src_vocab=50000, n_tgt_vocab=50000, n_positions=128,
+        d_model=64, n_heads=2, n_encoder_layers=1, n_decoder_layers=1
+    )
+    model.eval()
+
+    src = torch.tensor([[1, 2, 3, 4, 5]])
+    tgt = torch.tensor([[1, 2, 3]])
+
+    with torch.no_grad():
+        logits, attn_maps = model(src, tgt, return_attn=True)
+
+    encoder_self_attn = attn_maps["encoder"][0]  # (1, 2, 5, 5)
+
+    print("Encoder self attention (head 0):")
+    print(encoder_self_attn[0, 0])
+
+    # Check each column (same key for all queries)
+    print("\nCheck each column (same key's weights across all queries):")
+    for key_pos in range(5):
+        col = encoder_self_attn[0, 0, :, key_pos]
+        print(f"Key position {key_pos}: {col}")
+        print(f"  Std dev: {col.std().item():.6f}")
+
+    # Check each row (same query for all keys)
+    print("\nCheck each row (same query's weights across all keys):")
+    for query_pos in range(5):
+        row = encoder_self_attn[0, 0, query_pos, :]
+        print(f"Query position {query_pos}: {row}")
+        print(f"  Std dev: {row.std().item():.6f}")
+
+
+def test_attention_pattern_evolution():
+    """Demonstrate how training changes attention patterns"""
+    import torch.nn.functional as F
+
+    # Simulate different Q·K^T scores
+    print("=== Scenario 1: Untrained (scores close to 0) ===")
+    scores_untrained = torch.tensor([[0.01, 0.02, -0.01, 0.03, -0.02]])
+    attn_untrained = F.softmax(scores_untrained / 0.125, dim=-1)  # scale by sqrt(d_k)
+    print("Scores:", scores_untrained)
+    print("Attention:", attn_untrained)
+    print("Std dev:", attn_untrained.std().item())
+
+    print("\n=== Scenario 2: After training (scores with clear differences) ===")
+    scores_trained = torch.tensor([[2.5, 0.3, -1.2, 3.8, -0.5]])
+    attn_trained = F.softmax(scores_trained / 0.125, dim=-1)
+    print("Scores:", scores_trained)
+    print("Attention:", attn_trained)
+    print("Std dev:", attn_trained.std().item())
+
+    print("\n=== Scenario 3: Highly focused attention ===")
+    scores_focused = torch.tensor([[0.5, 0.1, -0.3, 5.0, -0.2]])
+    attn_focused = F.softmax(scores_focused / 0.125, dim=-1)
+    print("Scores:", scores_focused)
+    print("Attention:", attn_focused)
+    print("Std dev:", attn_focused.std().item())
