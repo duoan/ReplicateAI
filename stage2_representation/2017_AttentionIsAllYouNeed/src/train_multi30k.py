@@ -20,7 +20,6 @@ from tokenizer import get_tokenizer
 import sacrebleu
 import wandb
 import getpass
-from concurrent.futures import ThreadPoolExecutor
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
@@ -31,7 +30,6 @@ src_tokenizer = get_tokenizer(str(SCRIPT_DIR / "tokenizer_en.json"))
 tgt_tokenizer = get_tokenizer(str(SCRIPT_DIR / "tokenizer_de.json"))
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-executor = ThreadPoolExecutor(max_workers=4)
 
 
 def train(model, dataloader, optimizer, scheduler, pad_idx):
@@ -119,6 +117,7 @@ def evaluate(model, dataloader, pad_idx):
 def visualize_attention(
     model,
     dataloader,
+    epoch,
     max_heads: int = 4,
     max_samples: int = 4,
 ):
@@ -153,7 +152,7 @@ def visualize_attention(
                         f"Encoder L{layer_i} H{head_i} Sample {n}",
                     )
                 )
-        wandb.log(log_dict)
+        wandb.log(log_dict, step=epoch)
 
     # --- Decoder self-attention ---
     print("Visualizing decoder self attention")
@@ -178,7 +177,7 @@ def visualize_attention(
                         f"Decoder Self L{layer_i} H{head_i} Sample {n}",
                     )
                 )
-        wandb.log(log_dict)
+        wandb.log(log_dict, step=epoch)
 
     # ---------------- Decoder cross-attention ----------------
     print("Visualizing decoder cross attention")
@@ -207,29 +206,7 @@ def visualize_attention(
                         f"Decoder Cross L{layer_i} H{head_i} Sample {n}",
                     )
                 )
-        wandb.log(log_dict)
-
-
-def submit_attention_visualization(
-    model,
-    dataloader,
-    max_heads=4,
-    max_samples=4,
-):
-    """Submit visualization to background thread."""
-
-    def task():
-        try:
-            visualize_attention(
-                model=model,
-                dataloader=dataloader,
-                max_heads=max_heads,
-                max_samples=max_samples,
-            )
-        except Exception as e:
-            print(f"[WARN] Visualization thread failed: {e}")
-
-    executor.submit(task)
+        wandb.log(log_dict, step=epoch)
 
 
 def compute_bleu(
@@ -243,7 +220,7 @@ def compute_bleu(
     hypotheses = []
 
     with torch.no_grad():
-        for batch in tqdm(dataloader, desc="Evaluating BLEU", dynamic_ncols=True):
+        for batch_idx, batch in enumerate(tqdm(dataloader, desc="Evaluating BLEU", dynamic_ncols=True)):
             src = batch["src_ids"].to(device)
             preds = model.greedy_decode(src, max_len=max_len)
             for i in range(src.size(0)):
@@ -256,8 +233,24 @@ def compute_bleu(
 
                 hypotheses.append(pred_tokens)
                 references.append(tgt_tokens)
+                
+                # DEBUG: Log first few examples
+                if batch_idx == 0 and i < 3:
+                    print(f"\n[DEBUG] Example {i}:")
+                    print(f"  Prediction IDs: {preds[i][:20].tolist()}")
+                    print(f"  Prediction: '{pred_tokens}'")
+                    print(f"  Reference: '{tgt_tokens}'")
+                    print(f"  Model SOS ID: {model.tgt_sos_id}")
+                    print(f"  Tokenizer SOS ID: {tgt_tokenizer.sos_id}")
+                    print(f"  Tokenizer EOS ID: {tgt_tokenizer.eos_id}")
 
-    bleu = sacrebleu.corpus_bleu(hypotheses, references)
+    # DEBUG: Check if predictions are empty
+    print(f"\n[DEBUG] Total samples: {len(hypotheses)}")
+    print(f"[DEBUG] Empty predictions: {sum(1 for h in hypotheses if len(h.strip()) == 0)}")
+    print(f"[DEBUG] First 3 hypotheses: {hypotheses[:3]}")
+    print(f"[DEBUG] First 3 references: {references[:3]}")
+    
+    bleu = sacrebleu.corpus_bleu(hypotheses, [references])
 
     print(f"BLEU score = {bleu.score:.2f}")
     return bleu.score
@@ -265,7 +258,7 @@ def compute_bleu(
 
 def main():
     torch.manual_seed(42)
-    batch_size = 128
+    batch_size = 64
 
     train_dataset = Multi30KDataset(
         split="train", src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer
@@ -287,11 +280,11 @@ def main():
         entity="reproduce-ai",
         project="2017_AttentionIsAllYouNeed",
         config={
-            "src_pad_id": train_dataset.pad_id,
-            "tgt_pad_id": train_dataset.pad_id,
-            "tgt_sos_id": train_dataset.eos_id,
-            "n_src_vocab": train_dataset.vocab_size,
-            "n_tgt_vocab": train_dataset.vocab_size,
+            "src_pad_id": src_tokenizer.pad_id,
+            "tgt_pad_id": tgt_tokenizer.pad_id,
+            "tgt_sos_id": tgt_tokenizer.sos_id,
+            "n_src_vocab": src_tokenizer.vocab_size,
+            "n_tgt_vocab": tgt_tokenizer.vocab_size,
             "n_positions": train_dataset.max_len,
             "n_encoder_layers": 6,
             "n_decoder_layers": 6,
@@ -305,10 +298,10 @@ def main():
 
     model = Transformer(
         src_pad_id=train_dataset.pad_id,
-        tgt_pad_id=train_dataset.pad_id,
-        tgt_sos_id=train_dataset.eos_id,
+        tgt_pad_id=tgt_tokenizer.pad_id,
+        tgt_sos_id=tgt_tokenizer.sos_id,
         n_src_vocab=train_dataset.vocab_size,
-        n_tgt_vocab=train_dataset.vocab_size,
+        n_tgt_vocab=tgt_tokenizer.vocab_size,
         n_positions=train_dataset.max_len,
         n_encoder_layers=6,
         n_decoder_layers=6,
@@ -357,7 +350,7 @@ def main():
         )
         train_history.append((train_loss, train_ppl))
 
-        submit_attention_visualization(model, val_loader)
+        visualize_attention(model, val_loader, epoch)
 
         val_loss, val_ppl = evaluate(model, val_loader, train_dataset.pad_id)
         print(
@@ -371,7 +364,8 @@ def main():
                 "train_ppl": train_ppl,
                 "val_loss": val_loss,
                 "val_ppl": val_ppl,
-            }
+            },
+            step=epoch,
         )
 
         if val_loss < best_val_loss:
@@ -394,10 +388,39 @@ def main():
 
     torch.save(model.state_dict(), SCRIPT_DIR / "model.pth")
     run.log({"bleu_score": bleu_score})
-    run.log_model("model.path", "model")
-    executor.shutdown()
+    run.log_model(SCRIPT_DIR / "model.pth", "model")
     run.finish()
 
+def test():
+    model = Transformer(
+        src_pad_id=src_tokenizer.pad_id,
+        tgt_pad_id=tgt_tokenizer.pad_id,
+        tgt_sos_id=tgt_tokenizer.sos_id,
+        n_src_vocab=src_tokenizer.vocab_size,
+        n_tgt_vocab=tgt_tokenizer.vocab_size,
+        n_positions=128,
+        n_encoder_layers=6,
+        n_decoder_layers=6,
+        d_model=512,
+        n_heads=8,
+        d_ff=2048,
+        dropout_prob=0.1,
+    )
+    
+    state_dict = torch.load(SCRIPT_DIR / "model.pth")
+    model.load_state_dict(state_dict)
+    model = model.to(device)
+    model.eval()
+    
+    print("Evaluating BLEU on test set...")
+    test_dataset = Multi30KDataset(
+        split="test", src_tokenizer=src_tokenizer, tgt_tokenizer=tgt_tokenizer
+    )
+    test_loader = DataLoader(
+        test_dataset, batch_size=32, num_workers=4, pin_memory=True
+    )
+    bleu_score = compute_bleu(model, test_loader, tgt_tokenizer, max_len=128)
+    print(f"Final BLEU score: {bleu_score:.2f}")
 
 if __name__ == "__main__":
     main()

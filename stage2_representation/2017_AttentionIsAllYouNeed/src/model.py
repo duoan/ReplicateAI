@@ -1,6 +1,5 @@
-from typing import Dict, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
-from datasets import List
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -301,8 +300,8 @@ class TransformerDecoderLayer(nn.Module):
 
             tgt: the sequence to the decoder layer (required).
             src: the sequence from the last layer of the encoder (required).
-            tgt_mask: the mask for the tgt sequence (optional).
-            src_mask: the mask for the memory sequence (optional).
+            tgt_mask: the mask for the tgt sequence (optional). Shape: (N, 1, T_tgt, T_tgt)
+            src_mask: the mask for the memory sequence (optional). Shape: (N, 1, 1, T_src)
 
         """
         # self attention for target
@@ -311,8 +310,10 @@ class TransformerDecoderLayer(nn.Module):
         tgt_self_attn_out = self.norm1(tgt + tgt_self_attn_out)
 
         # cross attention with source
+        # Query from target, Key and Value from source
+        # src_mask shape (N, 1, 1, T_src) will broadcast to (N, H, T_tgt, T_src)
         cross_attn_out, cross_attn_weights = self.cross_attn(
-            tgt_self_attn_out, src, src, src_mask
+            query=tgt_self_attn_out, key=src, value=src, mask=src_mask
         )
         cross_attn_out = self.norm2(tgt_self_attn_out + self.dropout2(cross_attn_out))
 
@@ -330,21 +331,16 @@ class PositionalEncoding(nn.Module):
     def __init__(self, d_model, n_position=5000):
         super().__init__()
 
-        pe = torch.zeros(n_position, d_model)  # (n_position, d_model)
-
-        position = torch.arange(0, n_position, dtype=torch.float).unsqueeze(
-            1
-        )  # (n_position, 1)
-
-        div_base = 10000
-        for i in range(0, d_model, 2):
-            denominator = div_base ** (2 * i / d_model)  # 10000^(2i/d_model)
-            angle = position / denominator  # (n_position, 1)
-            pe[:, i] = torch.sin(angle).squeeze(1)  # even dims: sin
-            if i + 1 < d_model:
-                pe[:, i + 1] = torch.cos(angle).squeeze(1)  # odd dims: cos
-        # add batch dimension
-        pe = pe.unsqueeze(0)  # (1, n_position, d_model)
+        pe = torch.zeros(n_position, d_model)
+        position = torch.arange(0, n_position, dtype=torch.float).unsqueeze(1)
+        
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * 
+                            (-torch.log(torch.tensor(10000.0)) / d_model))
+        
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        
+        pe = pe.unsqueeze(0)
         self.register_buffer("pe", pe)
 
     def forward(self, x):
@@ -405,15 +401,24 @@ class Transformer(nn.Module):
         self.tgt_proj = nn.Linear(d_model, n_tgt_vocab, bias=bias)
 
     def _make_src_mask(self, src: torch.Tensor) -> torch.Tensor:
+        # Shape: (N, 1, 1, T_src) - for masking padding in keys
         src_mask = (src != self.src_pad_id).unsqueeze(1).unsqueeze(2)
         return src_mask
 
     def _make_trg_mask(self, tgt: torch.Tensor) -> torch.Tensor:
-        tgt_pad_mask = (tgt != self.tgt_pad_id).unsqueeze(1).unsqueeze(3)
-        tgt_len = tgt.shape[1]
-        tgt_sub_mask = torch.tril(torch.ones(tgt_len, tgt_len)).to(tgt.device).bool()
+        N, tgt_len = tgt.shape
+        
+        # Padding mask: (N, 1, 1, T_tgt) - for masking padding in keys
+        tgt_pad_mask = (tgt != self.tgt_pad_id).unsqueeze(1).unsqueeze(2)  # (N, 1, 1, T_tgt)
+        
+        # Causal mask: (1, 1, T_tgt, T_tgt)
+        tgt_sub_mask = torch.tril(torch.ones(tgt_len, tgt_len, device=tgt.device)).bool()
+        tgt_sub_mask = tgt_sub_mask.unsqueeze(0).unsqueeze(0)
+        
+        # Combine: (N, 1, T_tgt, T_tgt)
         tgt_mask = tgt_pad_mask & tgt_sub_mask
         return tgt_mask
+
 
     def forward(
         self,
@@ -461,7 +466,7 @@ class Transformer(nn.Module):
         else:
             return logits
 
-    def greedy_decode(self, src, max_len=100):
+    def greedy_decode(self, src, max_len=100, eos_id=None):
         self.eval()
         src_mask = self._make_src_mask(src)
         src_emb = self.pos_enc(self.src_embed(src))
@@ -481,7 +486,7 @@ class Transformer(nn.Module):
             logits = self.tgt_proj(out[:, -1, :])
             next_token = logits.argmax(dim=-1).unsqueeze(1)
             ys = torch.cat([ys, next_token], dim=1)
-            if (next_token == self.tgt_pad_id).all():
+            if eos_id is not None and (next_token == eos_id).all():
                 break
         return ys
 
@@ -493,8 +498,8 @@ def test_scaled_dot_product_attention_causal_only():
     K = torch.randn(N, H, T, d)
     V = torch.randn(N, H, T, d)
 
-    causal = torch.triu(torch.ones(T, T, dtype=torch.bool, device=Q.device), diagonal=1)
-    out, w = attn(Q, K, V, mask=causal)
+    causal_mask = torch.tril(torch.ones(T, T, dtype=torch.bool, device=Q.device))
+    out, w = attn(Q, K, V, mask=causal_mask)
 
     assert out.shape == (N, H, T, d)
     assert w.shape == (N, H, T, T)
