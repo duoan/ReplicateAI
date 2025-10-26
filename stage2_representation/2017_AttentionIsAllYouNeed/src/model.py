@@ -16,11 +16,11 @@ class ScaledDotProductAttention(nn.Module):
         self.dropout = nn.Dropout(dropout_prob)
 
     def forward(
-        self,
-        query: torch.Tensor,
-        key: torch.Tensor,
-        value: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
+            self,
+            query: torch.Tensor,
+            key: torch.Tensor,
+            value: torch.Tensor,
+            mask: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -37,22 +37,21 @@ class ScaledDotProductAttention(nn.Module):
         d_key = key.size(-1)
         # (N, H, T, d_head) @ (N, H, d_head, T)
         # => (N, n_heads, T, T)
-        scale = d_key**-0.5
+        scale = d_key ** -0.5
         scores = torch.matmul(query, key.transpose(-2, -1)) * scale
         if mask is not None:
             if mask.dtype == torch.bool:
-                scores = scores.masked_fill(~mask, -1e-9)
+                scores = scores.masked_fill(~mask, float('-inf'))
             else:
-                scores = scores.masked_fill(mask == 0, -1e-9)
+                scores = scores.masked_fill(mask == 0, float('-inf'))
 
         attn_weights = F.softmax(
             scores, dim=-1
         )  # (N, H, T_query, T_key) very q weights cross keys
-        attn_weights = self.dropout(attn_weights)  # (N, H, T, T)
 
         # (N, H, T, T) @ (N, H, T, d_head)
         # => (N, H, T, d_head)
-        output = torch.matmul(attn_weights, value)
+        output = torch.matmul(self.dropout(attn_weights), value)
 
         return output, attn_weights
 
@@ -60,11 +59,11 @@ class ScaledDotProductAttention(nn.Module):
 class MultiHeadAttention(nn.Module):
 
     def __init__(
-        self,
-        d_model=512,
-        n_heads=8,
-        dropout_prob=0.1,
-        bias=False,
+            self,
+            d_model=512,
+            n_heads=8,
+            dropout_prob=0.1,
+            bias=False,
     ) -> None:
         super().__init__()
         assert d_model % n_heads == 0, f"{d_model=} must be x times of {n_heads=}"
@@ -103,11 +102,11 @@ class MultiHeadAttention(nn.Module):
         return x.transpose(1, 2).contiguous().view(N, T, H * d_head)
 
     def forward(
-        self,
-        query: torch.Tensor,
-        key: Optional[torch.Tensor] = None,
-        value: Optional[torch.Tensor] = None,
-        mask: Optional[torch.Tensor] = None,
+            self,
+            query: torch.Tensor,
+            key: Optional[torch.Tensor] = None,
+            value: Optional[torch.Tensor] = None,
+            mask: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -152,12 +151,12 @@ class MultiHeadAttention(nn.Module):
 class FeedForward(nn.Module):
 
     def __init__(
-        self,
-        d_model=512,
-        d_ff=2048,
-        dropout_prob=0.1,
-        bias=True,
-        activation="relu",
+            self,
+            d_model=512,
+            d_ff=2048,
+            dropout_prob=0.1,
+            bias=True,
+            activation="relu",
     ):
         super().__init__()
         self.d_model = d_model
@@ -206,14 +205,14 @@ class TransformerEncoderLayer(nn.Module):
     """
 
     def __init__(
-        self,
-        d_model=512,
-        n_heads=8,
-        d_ff=2048,
-        dropout_prob=0.1,
-        bias=False,
-        activation="relu",
-        norm_eps=1e-6,
+            self,
+            d_model=512,
+            n_heads=8,
+            d_ff=2048,
+            dropout_prob=0.1,
+            bias=False,
+            activation="relu",
+            norm_eps=1e-6,
     ):
         super().__init__()
         self.d_model = d_model
@@ -230,10 +229,10 @@ class TransformerEncoderLayer(nn.Module):
         self.dropout = nn.Dropout(dropout_prob)
 
     def forward(
-        self,
-        src: torch.Tensor,
-        src_mask: Optional[torch.Tensor] = None,
-        return_attn=False,
+            self,
+            src: torch.Tensor,
+            src_mask: Optional[torch.Tensor] = None,
+            return_attn=False,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
         Args:
@@ -261,14 +260,14 @@ class TransformerEncoderLayer(nn.Module):
 class TransformerDecoderLayer(nn.Module):
 
     def __init__(
-        self,
-        d_model=512,
-        n_heads=8,
-        d_ff=2048,
-        dropout_prob=0.1,
-        bias=False,
-        activation="relu",
-        norm_eps=1e-6,
+            self,
+            d_model=512,
+            n_heads=8,
+            d_ff=2048,
+            dropout_prob=0.1,
+            bias=False,
+            activation="relu",
+            norm_eps=1e-6,
     ):
         super().__init__()
         self.d_model = d_model
@@ -287,12 +286,12 @@ class TransformerDecoderLayer(nn.Module):
         self.dropout3 = nn.Dropout(dropout_prob)
 
     def forward(
-        self,
-        tgt: torch.Tensor,
-        src: torch.Tensor,
-        tgt_mask: Optional[torch.Tensor] = None,
-        src_mask: Optional[torch.Tensor] = None,
-        return_attn=False,
+            self,
+            tgt: torch.Tensor,
+            src: torch.Tensor,
+            tgt_mask: Optional[torch.Tensor] = None,
+            src_mask: Optional[torch.Tensor] = None,
+            return_attn=False,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
         """Pass the inputs (and mask) through the decoder layer.
 
@@ -333,13 +332,13 @@ class PositionalEncoding(nn.Module):
 
         pe = torch.zeros(n_position, d_model)
         position = torch.arange(0, n_position, dtype=torch.float).unsqueeze(1)
-        
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * 
-                            (-torch.log(torch.tensor(10000.0)) / d_model))
-        
+
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() *
+                             (-torch.log(torch.tensor(10000.0)) / d_model))
+
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
-        
+
         pe = pe.unsqueeze(0)
         self.register_buffer("pe", pe)
 
@@ -353,22 +352,22 @@ class PositionalEncoding(nn.Module):
 
 class Transformer(nn.Module):
     def __init__(
-        self,
-        src_pad_id,
-        tgt_pad_id,
-        tgt_sos_id,
-        n_src_vocab,
-        n_tgt_vocab,
-        n_positions,
-        d_model=512,
-        n_heads=8,
-        d_ff=2048,
-        dropout_prob=0.1,
-        bias=False,
-        activation="gelu",
-        norm_eps=1e-6,
-        n_encoder_layers=1,
-        n_decoder_layers=1,
+            self,
+            src_pad_id,
+            tgt_pad_id,
+            tgt_sos_id,
+            n_src_vocab,
+            n_tgt_vocab,
+            n_positions,
+            d_model=512,
+            n_heads=8,
+            d_ff=2048,
+            dropout_prob=0.1,
+            bias=False,
+            activation="gelu",
+            norm_eps=1e-6,
+            n_encoder_layers=1,
+            n_decoder_layers=1,
     ):
         super().__init__()
 
@@ -407,24 +406,23 @@ class Transformer(nn.Module):
 
     def _make_trg_mask(self, tgt: torch.Tensor) -> torch.Tensor:
         N, tgt_len = tgt.shape
-        
+
         # Padding mask: (N, 1, 1, T_tgt) - for masking padding in keys
         tgt_pad_mask = (tgt != self.tgt_pad_id).unsqueeze(1).unsqueeze(2)  # (N, 1, 1, T_tgt)
-        
+
         # Causal mask: (1, 1, T_tgt, T_tgt)
         tgt_sub_mask = torch.tril(torch.ones(tgt_len, tgt_len, device=tgt.device)).bool()
         tgt_sub_mask = tgt_sub_mask.unsqueeze(0).unsqueeze(0)
-        
+
         # Combine: (N, 1, T_tgt, T_tgt)
         tgt_mask = tgt_pad_mask & tgt_sub_mask
         return tgt_mask
 
-
     def forward(
-        self,
-        src_ids: torch.Tensor,  # (N, T_src)
-        tgt_ids: torch.Tensor,  # (N, T_tgt)
-        return_attn=False,
+            self,
+            src_ids: torch.Tensor,  # (N, T_src)
+            tgt_ids: torch.Tensor,  # (N, T_tgt)
+            return_attn=False,
     ) -> Union[torch.Tensor, tuple[torch.Tensor, dict[str, list[torch.Tensor]]]]:
         # Encoder
         src_mask = self._make_src_mask(src_ids)
@@ -519,3 +517,33 @@ def test_feed_forward():
     x = torch.randn(2, 10, 512)
     out = ff(x)
     assert out.shape == (2, 10, 512)  # torch.Size([2, 10, 512])
+
+
+def test_transformer_attentions():
+    model = Transformer(
+        src_pad_id=0, tgt_pad_id=0, tgt_sos_id=1,
+        n_src_vocab=50000, n_tgt_vocab=50000, n_positions=128,
+        d_model=64, n_heads=2, n_encoder_layers=1, n_decoder_layers=1
+    )
+    model.eval()
+
+    src = torch.tensor([[1, 2, 3, 4, 5]])  # (1, 5) - key, value
+    tgt = torch.tensor([[1, 2, 3]])  # (1, 3) query
+
+    logits, attn_maps = model(src, tgt, return_attn=True)
+
+    encoder_self_attn = attn_maps["encoder"][0]  # (1, 2, 5, 5)
+    print("Encoder self attention shape:", encoder_self_attn.shape)
+    print("Encoder self attention weights:\n", encoder_self_attn[0, 0])  # first head
+    print("Sum along src dim:", encoder_self_attn.sum(dim=-1))
+
+    decoder_self_attn = attn_maps["decoder_self"][0]
+    print("Decoder self attention shape:", decoder_self_attn.shape)
+    print("Decoder self attention weights:\n", decoder_self_attn[0, 0])
+    print("Sum along tgt dim:", decoder_self_attn.sum(dim=-1))
+
+    decoder_cross_attn = attn_maps['decoder_cross'][0]  # (1, 2, 3, 5)
+    print("Decoder cross attention shape:", decoder_cross_attn.shape)
+    print("Decoder cross attention weights:\n", decoder_cross_attn[0, 0])
+
+    print("Sum along src dim:", decoder_cross_attn.sum(dim=-1))
