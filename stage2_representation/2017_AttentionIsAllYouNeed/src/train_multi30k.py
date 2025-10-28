@@ -277,7 +277,7 @@ def main():
     )
 
     run = wandb.init(
-        entity="reproduce-ai",
+        entity="replicate-ai",
         project="2017_AttentionIsAllYouNeed",
         config={
             "src_pad_id": src_tokenizer.pad_id,

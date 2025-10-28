@@ -6,7 +6,7 @@ Example:
 """
 
 def main():
-    print("🚀 ReproduceAI: Implementation entry point")
+    print("🚀 ReplicateAI: Implementation entry point")
     print("TODO: Implement your model or experiment logic here.")
 
 

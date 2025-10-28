@@ -1,5 +1,5 @@
 # ====================================================
-# 🧠 ReproduceAI — Makefile (Unified Stage Naming)
+# 🧠 ReplicateAI — Makefile (Unified Stage Naming)
 # ====================================================
 
 PYTHON = .venv/bin/python
@@ -7,11 +7,11 @@ SCRIPTS_DIR = scripts
 INDEX_FILE = PAPER_INDEX.json
 
 help:
-	@echo "🧠 ReproduceAI — Available commands:"
+	@echo "🧠 ReplicateAI — Available commands:"
 	@echo "  make init                    -> Initialize project structure"
 	@echo "  make add name=\"<PaperName>\" year=<YYYY> org=\"<Org>\" stage=<stage>"
 	@echo "  make list                    -> List all registered papers"
-	@echo "  make status                  -> Show current reproduction progress"
+	@echo "  make status                  -> Show current replication progress"
 	@echo "  make clean                   -> Remove temporary files"
 	@echo ""
 	@echo "  Valid stages:"
@@ -22,7 +22,7 @@ help:
 	@echo "     neural          (Early Neural Origins)"
 
 init:
-	@echo "📁 Initializing ReproduceAI directory structure..."
+	@echo "📁 Initializing ReplicateAI directory structure..."
 	mkdir -p stage1_foundation stage2_representation stage3_deep_renaissance stage4_statistical stage5_neural_origins scripts paper_template
 	@echo "✅ Base directories created."
 

@@ -22,7 +22,7 @@ STAGE_MAP = {
 def update_notebook_header(notebook_path, paper_title, year):
     import json
     nb = json.load(open(notebook_path))
-    nb["cells"][0]["source"][0] = f"# 🧠 ReproduceAI Demo Notebook — {paper_title} ({year})\n"
+    nb["cells"][0]["source"][0] = f"# 🧠 ReplicateAI Demo Notebook — {paper_title} ({year})\n"
     with open(notebook_path, "w") as f:
         json.dump(nb, f, indent=2)
 
@@ -92,7 +92,7 @@ def add_paper(year, name, org, stage):
         "status": "planned",
         "tags": [],
         "path": str(paper_dir.relative_to(BASE_DIR)),
-        "reproducer": "TBD",
+        "replicator": "TBD",
         "last_updated": str(date.today()),
     }
 
@@ -107,7 +107,7 @@ def add_paper(year, name, org, stage):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Add a new paper to ReproduceAI index")
+    parser = argparse.ArgumentParser(description="Add a new paper to ReplicateAI index")
     parser.add_argument("--year", required=True, type=int)
     parser.add_argument("--name", required=True, type=str)
     parser.add_argument("--org", required=True, type=str)

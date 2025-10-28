@@ -11,9 +11,8 @@ class ScaledDotProductAttention(nn.Module):
     (Vaswani et al., 2017, Eq. 1)
     """
 
-    def __init__(self, dropout_prob: float = 0.1, *args, **kwargs) -> None:
+    def __init__(self,*args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.dropout = nn.Dropout(dropout_prob)
 
     def forward(
             self,
@@ -51,7 +50,7 @@ class ScaledDotProductAttention(nn.Module):
 
         # (N, H, T, T) @ (N, H, T, d_head)
         # => (N, H, T, d_head)
-        output = torch.matmul(self.dropout(attn_weights), value)
+        output = torch.matmul(attn_weights, value)
 
         return output, attn_weights
 
@@ -81,7 +80,7 @@ class MultiHeadAttention(nn.Module):
         # Final output projection
         self.W_o = nn.Linear(d_model, d_model, bias=bias)
 
-        self.attention = ScaledDotProductAttention(dropout_prob)
+        self.attention = ScaledDotProductAttention()
         # Normalization  + dropout
         self.dropout = nn.Dropout(dropout_prob)
 

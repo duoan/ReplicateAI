@@ -1,6 +1,6 @@
-# 🧠 ReproduceAI Development Notes
+# 🧠 ReplicateAI Development Notes
 
-> This document records all development operations, workflows, and progress logs for **ReproduceAI**.  
+> This document records all development operations, workflows, and progress logs for **ReplicateAI**.  
 > It serves as both a quick-start guide and an internal research diary.
 
 ---
@@ -30,7 +30,7 @@ make init
 This will create the following directory layout:
 
 ```
-ReproduceAI/
+ReplicateAI/
 ├── stage1_foundation/
 ├── stage2_representation/
 ├── stage3_deep_renaissance/
@@ -199,7 +199,7 @@ git push
 
 | Date           | Update                              | Notes                                                                                    |
 |----------------|-------------------------------------|------------------------------------------------------------------------------------------|
-| **2025-10-18** | ✅ Initialized ReproduceAI structure | Added Makefile, scripts, and template                                                    |
+| **2025-10-18** | ✅ Initialized ReplicateAI structure | Added Makefile, scripts, and template                                                    |
 | **2025-10-18** | ➕ Added BERT                        | Verified indexing and `make status` output                                               |
 | **2025-10-18** | ✅ Attention All You Need            | Implemented Scaled Dot-Product Attention, MultiHeadAttention and PositionwiseFeedforward |
 | **2025-10-18** | ✅ Attention All You Need            | Implemented Encoder, Decoder, Transformer,add a toy dataset for train test               |
@@ -232,4 +232,4 @@ git push
 
 ---
 
-🧩 *ReproduceAI — Rebuilding AI, one paper at a time.*
+🧩 *ReplicateAI — Rebuilding AI, one paper at a time.*

@@ -1,6 +1,6 @@
 {
   "meta": {
-    "project": "ReproduceAI",
+    "project": "ReplicateAI",
     "version": "1.0",
     "last_updated": "2025-10-18"
   },
@@ -13,7 +13,7 @@
       "status": "planned",
       "tags": [],
       "path": "stage2_representation/2018_BERT",
-      "reproducer": "TBD",
+      "replicator": "TBD",
       "last_updated": "2025-10-18"
     },
     {
@@ -21,10 +21,10 @@
       "paper": "Attention Is All You Need",
       "organization": "Google",
       "stage": "Representation",
-      "status": "In Reproduction",
+      "status": "In Replication",
       "tags": [],
       "path": "stage2_representation/2017_AttentionIsAllYouNeed",
-      "reproducer": "TBD",
+      "replicator": "TBD",
       "last_updated": "2025-10-18"
     }
   ]
