@@ -29,7 +29,8 @@ class ViTConfig:
     encoder_stride: int = 14
     pooler_output_size: Optional[int] = None
     pooler_act = "tanh"
-    attention_impl: Literal["eager", "flash_attention_2", "flash_attention_2"] = "eager"
+    attention_impl: Literal["eager", "sdpa"] = "sdpa"
+    label_smoothing: float = 0.1
 
 
 class ViTPatchEmbedding(nn.Module):
@@ -163,7 +164,7 @@ class ViTAttention(nn.Module):
                 .view(batch_size, -1, self.all_head_size)
                 # (batch_size, num_patches + 1, num_attention_heads * attention_head_size)
             )
-        elif self.attention_impl == "sdpa":
+        else:
             context = F.scaled_dot_product_attention(
                 query_layer,
                 key_layer,
@@ -173,17 +174,11 @@ class ViTAttention(nn.Module):
                 scale=self.scale,
                 dropout_p=self.attn_drop_p,
             )
-        elif self.attention_impl == "flash_attention_2":
-            from flash_attn import flash_attn_func
-            context = flash_attn_func(
-                query_layer,
-                key_layer,
-                value_layer,
-                dropout_p=self.attn_drop_p,
-                softmax_scale=self.scale,
+            context = (
+                context.transpose(1, 2)  # (batch_size, num_patches + 1, num_attention_heads, attention_head_size)
+                .contiguous()
+                .view(batch_size, -1, self.all_head_size)
             )
-        else:
-            raise NotImplementedError("not implemented")
 
         # output
         output = self.out_proj(context)
@@ -238,6 +233,7 @@ class ViTEncoder(nn.Module):
 class VisionTransformer(nn.Module):
     def __init__(self, config: ViTConfig):
         super().__init__()
+        self.label_smoothing = config.label_smoothing
         self.embedding = ViTEmbedding(config)
         self.encoder = ViTEncoder(config)
         self.mlp_head = nn.Linear(config.hidden_size, config.num_classes)
@@ -249,7 +245,7 @@ class VisionTransformer(nn.Module):
         logits = self.mlp_head(cls)
         loss = None
         if labels is not None:
-            loss = F.cross_entropy(logits, labels)
+            loss = F.cross_entropy(logits, labels, label_smoothing=self.label_smoothing)
         return {
             "logits": logits,
             "loss": loss,
