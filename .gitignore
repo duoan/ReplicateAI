@@ -7,10 +7,12 @@ wheels/
 *.egg-info
 
 # Virtual environments
-.venv
-.idea
+.venv/
+.idea/
 *.pth
 
 tokenizer*.json
 
-wandb
+wandb/
+
+data/

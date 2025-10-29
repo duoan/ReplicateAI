@@ -2,7 +2,7 @@
   "meta": {
     "project": "ReplicateAI",
     "version": "1.0",
-    "last_updated": "2025-10-18"
+    "last_updated": "2025-10-27"
   },
   "papers": [
     {
@@ -13,7 +13,7 @@
       "status": "planned",
       "tags": [],
       "path": "stage2_representation/2018_BERT",
-      "replicator": "TBD",
+      "replicator": "Replicating",
       "last_updated": "2025-10-18"
     },
     {
@@ -21,11 +21,22 @@
       "paper": "Attention Is All You Need",
       "organization": "Google",
       "stage": "Representation",
-      "status": "In Replication",
+      "status": "Done",
       "tags": [],
       "path": "stage2_representation/2017_AttentionIsAllYouNeed",
       "replicator": "TBD",
       "last_updated": "2025-10-18"
+    },
+    {
+      "year": 2021,
+      "paper": "Vision Transformer",
+      "organization": "Google",
+      "stage": "Representation",
+      "status": "planned",
+      "tags": [],
+      "path": "stage2_representation/2021_VisionTransformer",
+      "replicator": "Replicating",
+      "last_updated": "2025-10-27"
     }
   ]
 }
