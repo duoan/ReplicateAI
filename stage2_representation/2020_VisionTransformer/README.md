@@ -8,6 +8,10 @@
 
 ![ViT](./figures/vit.png)
 
+<a target="_blank" href="https://colab.research.google.com/github/duoan/ReplicateAI/blob/master/stage2_representation/2020_VisionTransformer/notebook/Vision%20Transformer_demo.ipynb">
+  <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
+</a>
+
 ---
 
 ## 🎯 Replication Objectives
