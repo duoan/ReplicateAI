@@ -1,10 +1,10 @@
 from dataclasses import dataclass
-from typing import Optional, Union, LiteralString
+from typing import Optional, Union, Literal
 
 import torch
 import torch.nn as nn
-from torch import Tensor
 import torch.nn.functional as F
+from torch import Tensor
 
 """
 https://github.com/google-research/vision_transformer/blob/main/vit_jax/models_vit.py
@@ -29,7 +29,7 @@ class ViTConfig:
     encoder_stride: int = 14
     pooler_output_size: Optional[int] = None
     pooler_act = "tanh"
-    attention_impl: LiteralString["eager", "flash_attention_2", "flash_attention_2"] = "eager"
+    attention_impl: Literal["eager", "flash_attention_2", "flash_attention_2"] = "eager"
 
 
 class ViTPatchEmbedding(nn.Module):
@@ -142,7 +142,7 @@ class ViTAttention(nn.Module):
         key_layer = self.key(hidden_states).view(*new_shape).transpose(1, 2)
         value_layer = self.value(hidden_states).view(*new_shape).transpose(1, 2)
 
-        if self.config.attention_impl == "eager":
+        if self.attention_impl == "eager":
             # (batch_size, num_attention_heads, num_patches + 1, attention_head_size)
             # @ (batch_size, num_attention_heads, attention_head_size, num_patches + 1)
             # => (batch_size, num_attention_heads, num_patches + 1, num_patches + 1)
