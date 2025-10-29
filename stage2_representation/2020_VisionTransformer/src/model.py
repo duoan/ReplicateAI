@@ -117,6 +117,7 @@ class ViTAttention(nn.Module):
         self.attention_head_size = config.hidden_size // config.num_attention_heads
         self.all_head_size = self.num_attention_heads * self.attention_head_size
         self.attn_drop = nn.Dropout(config.hidden_dropout_prob)
+        self.attn_drop_p = config.hidden_dropout_prob
         self.scale: float = self.attention_head_size ** -0.5
 
         # pre-norm
@@ -170,7 +171,7 @@ class ViTAttention(nn.Module):
                 attn_mask=None,
                 is_causal=False,
                 scale=self.scale,
-                dropout_p=self.config.dropout_p,
+                dropout_p=self.attn_drop_p,
             )
         elif self.attention_impl == "flash_attention_2":
             from flash_attn import flash_attn_func
@@ -178,7 +179,7 @@ class ViTAttention(nn.Module):
                 query_layer,
                 key_layer,
                 value_layer,
-                dropout_p=self.config.dropout_p,
+                dropout_p=self.attn_drop_p,
                 softmax_scale=self.scale,
             )
         else:
