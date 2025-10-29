@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional, Union, LiteralString
 
 import torch
 import torch.nn as nn
@@ -29,6 +29,7 @@ class ViTConfig:
     encoder_stride: int = 14
     pooler_output_size: Optional[int] = None
     pooler_act = "tanh"
+    attention_impl: LiteralString["eager", "flash_attention_2", "flash_attention_2"] = "eager"
 
 
 class ViTPatchEmbedding(nn.Module):
@@ -111,12 +112,12 @@ class ViTAttention(nn.Module):
 
     def __init__(self, config: ViTConfig):
         super().__init__()
-
+        self.attention_impl = config.attention_impl
         self.num_attention_heads = config.num_attention_heads
         self.attention_head_size = config.hidden_size // config.num_attention_heads
         self.all_head_size = self.num_attention_heads * self.attention_head_size
         self.attn_drop = nn.Dropout(config.hidden_dropout_prob)
-        self.scale = self.attention_head_size ** -0.5
+        self.scale: float = self.attention_head_size ** -0.5
 
         # pre-norm
         self.norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
@@ -141,25 +142,47 @@ class ViTAttention(nn.Module):
         key_layer = self.key(hidden_states).view(*new_shape).transpose(1, 2)
         value_layer = self.value(hidden_states).view(*new_shape).transpose(1, 2)
 
-        # (batch_size, num_attention_heads, num_patches + 1, attention_head_size)
-        # @ (batch_size, num_attention_heads, attention_head_size, num_patches + 1)
-        # => (batch_size, num_attention_heads, num_patches + 1, num_patches + 1)
-        attn = torch.matmul(query_layer, key_layer.transpose(-2, -1)) / self.scale
-        attn = attn.softmax(dim=-1)
-
-        # (batch_size, num_attention_heads, num_patches + 1, num_patches + 1)
-        # @ (batch_size, num_attention_heads, num_patches + 1, attention_head_size)
-        # => (batch_size, num_attention_heads, num_patches + 1, attention_head_size)
-        # transpose =>  (batch_size, num_patches + 1, num_attention_heads, attention_head_size)
-        # view => (batch_size, num_patches + 1, num_attention_heads * attention_head_size)
-        context = (
+        if self.config.attention_impl == "eager":
             # (batch_size, num_attention_heads, num_patches + 1, attention_head_size)
-            torch.matmul(self.attn_drop(attn), value_layer)
-            .transpose(1, 2)  # (batch_size, num_patches + 1, num_attention_heads, attention_head_size)
-            .contiguous()
-            .view(batch_size, -1, self.all_head_size)
-            # (batch_size, num_patches + 1, num_attention_heads * attention_head_size)
-        )
+            # @ (batch_size, num_attention_heads, attention_head_size, num_patches + 1)
+            # => (batch_size, num_attention_heads, num_patches + 1, num_patches + 1)
+            attn = torch.matmul(query_layer, key_layer.transpose(-2, -1)) / self.scale
+            attn = attn.softmax(dim=-1)
+
+            # (batch_size, num_attention_heads, num_patches + 1, num_patches + 1)
+            # @ (batch_size, num_attention_heads, num_patches + 1, attention_head_size)
+            # => (batch_size, num_attention_heads, num_patches + 1, attention_head_size)
+            # transpose =>  (batch_size, num_patches + 1, num_attention_heads, attention_head_size)
+            # view => (batch_size, num_patches + 1, num_attention_heads * attention_head_size)
+            context = (
+                # (batch_size, num_attention_heads, num_patches + 1, attention_head_size)
+                torch.matmul(self.attn_drop(attn), value_layer)
+                .transpose(1, 2)  # (batch_size, num_patches + 1, num_attention_heads, attention_head_size)
+                .contiguous()
+                .view(batch_size, -1, self.all_head_size)
+                # (batch_size, num_patches + 1, num_attention_heads * attention_head_size)
+            )
+        elif self.attention_impl == "sdpa":
+            context = F.scaled_dot_product_attention(
+                query_layer,
+                key_layer,
+                value_layer,
+                attn_mask=None,
+                is_causal=False,
+                scale=self.scale,
+                dropout_p=self.config.dropout_p,
+            )
+        elif self.attention_impl == "flash_attention_2":
+            from flash_attn import flash_attn_func
+            context = flash_attn_func(
+                query_layer,
+                key_layer,
+                value_layer,
+                dropout_p=self.config.dropout_p,
+                softmax_scale=self.scale,
+            )
+        else:
+            raise NotImplementedError("not implemented")
 
         # output
         output = self.out_proj(context)

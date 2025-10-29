@@ -10,7 +10,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score
 from torch import stack, tensor
 from torch.utils.data import Subset
 from torchvision import datasets, transforms
-from transformers import TrainingArguments, Trainer
+from transformers import TrainingArguments, Trainer, EarlyStoppingCallback
 
 from model import ViTConfig, VisionTransformer
 
@@ -112,17 +112,20 @@ def main():
         per_device_train_batch_size=TEST_BATCH_SIZE,
         per_device_eval_batch_size=TEST_BATCH_SIZE,
         eval_strategy="epoch",
-        save_strategy="no",  # No need to save checkpoints for a quick test
+        save_strategy="epoch",  # No need to save checkpoints for a quick test
+        save_total_limit=2,
         num_train_epochs=2,  # Run for only 2 epochs
         learning_rate=3e-4,
         weight_decay=0.05,
         logging_steps=10,
-        load_best_model_at_end=False,  # No need to load best model
+        load_best_model_at_end=True,  # No need to load best model
         report_to="none",
         # Pass the device to TrainingArguments (important for non-CUDA systems)
         optim="adamw_torch",  # Explicitly use a common optimizer
         disable_tqdm=False,  # Keep progress bar for visibility
-        dataloader_pin_memory=True if torch.cuda.is_available() else False,
+        dataloader_pin_memory=True if torch.accelerator.is_available() else False,
+        metric_for_best_model="accuracy",
+        dataloader_num_workers=4,
     )
 
     trainer = Trainer(
@@ -132,6 +135,7 @@ def main():
         eval_dataset=test_ds,
         compute_metrics=compute_metrics,
         data_collator=custom_data_collator,
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=5)],
     )
 
     # Manually move model to the determined device (Trainer will handle it, but this is a good check)
