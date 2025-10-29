@@ -47,16 +47,17 @@ We believe that **understanding AI means rebuilding it — line by line, layer b
 
 ---
 
-## 🔍 Stage 2 — Representation & Sequence Models (2013–2020)
+## 🔍 Stage 2 — Representation & Sequence Models (2013–2021)
 
-| Year | Paper                                                              | Author                    | Goal                        | Status         |
-|------|--------------------------------------------------------------------|---------------------------|-----------------------------|----------------|
-| 2020 | [ViT](./stage2_representation/2020_VisionTransformer)              | Alexey Dosovitskiy et al. | Vision Transformer          | 🔬 Replicating |
-| 2018 | BERT                                                               | Devlin et al.             | Masked Language Modeling    | 🔬 Replicating |
-| 2017 | [Transformer](./stage2_representation/2017_AttentionIsAllYouNeed/) | Vaswani et al.            | “Attention Is All You Need” | ✅ Done         |
-| 2014 | Seq2Seq                                                            | Sutskever et al.          | Encoder-decoder translation | 🧭 Planned     |
-| 2013 | Word2Vec                                                           | Mikolov et al.            | Learn word embeddings       | 🧭 Planned     |
-| 2015 | Bahdanau Attention                                                 | Bahdanau et al.           | RNN + Attention             | 🧭 Planned     |
+| Year | Paper                                                              | Author             | Goal                                                          | Status         |
+|------|--------------------------------------------------------------------|--------------------|---------------------------------------------------------------|----------------|
+| 2021 | [CLIP](./stage2_representation/2021_CLIP)                          | Radford, et al.    | Align Vision and NLP in same space using contrastive learning | 🔬 Replicating |
+| 2020 | [ViT](./stage2_representation/2020_VisionTransformer)              | Dosovitskiy et al. | Vision Transformer                                            | ✅ Done         |
+| 2018 | BERT                                                               | Devlin et al.      | Masked Language Modeling                                      | 🔬 Replicating |
+| 2017 | [Transformer](./stage2_representation/2017_AttentionIsAllYouNeed/) | Vaswani et al.     | “Attention Is All You Need”                                   | ✅ Done         |
+| 2014 | Seq2Seq                                                            | Sutskever et al.   | Encoder-decoder translation                                   | 🧭 Planned     |
+| 2013 | Word2Vec                                                           | Mikolov et al.     | Learn word embeddings                                         | 🧭 Planned     |
+| 2015 | Bahdanau Attention                                                 | Bahdanau et al.    | RNN + Attention                                               | 🧭 Planned     |
 
 ---
 
