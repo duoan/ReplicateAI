@@ -1,11 +1,14 @@
-# 📘 Paper Replication: <Paper Title>
+# 📘 Paper Replication: Learning Transferable Visual Models From Natural Language Supervision
 
-> **Authors:** <Authors>  
-> **Published:** <Year>  
-> **Organization:** <Organization>  
-> **Stage:** <Stage>
+> **Authors:** Alec Radford etl. 
+> **Published:** 2021  
+> **Organization:** OpenAI  
+> **Stage:** Representation
+
+![clip](./figures/clip.png)
 
 ---
+
 
 ## 🎯 Replication Objectives
 
