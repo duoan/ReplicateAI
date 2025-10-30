@@ -1,22 +1,18 @@
 import torch
 from torch import nn
-import torch.nn.functional as F
-import torchvision.transforms as T
 import numpy as np
-
-
-def tokenize_text(text: str) -> torch.Tensor:
-    import tiktoken
-    enc = tiktoken.encoding_for_model("gpt-2")
-    print(enc.encode(text))
-    print(enc.max_token_value)
-    return None
+from torch.nn import functional as F
 
 
 class CLIP(nn.Module):
-    def __init__(self, vocab_size: int = 49408, pad_id: int = 0, seq_len: int = 77,
-                 num_text_layers: int = 4, num_text_heads: int = 8,
-                 text_ffn_hidden_size: int = 512, text_dropout: float = 0.1):
+    def __init__(
+            self,
+            vocab_size: int = 49408,
+            pad_id: int = 0,
+            eos_token_id: int = 0,
+            seq_len: int = 77,
+            num_text_layers: int = 4, num_text_heads: int = 8,
+            text_ffn_hidden_size: int = 512, text_dropout: float = 0.1):
         super().__init__()
         image_feature_hidden_size = 128
         text_feature_hidden_size = 128
@@ -36,6 +32,7 @@ class CLIP(nn.Module):
 
         # --- Text encoder (token + position embedding + TransformerEncoder + masked mean pool) ---
         self.pad_id = pad_id
+        self.eos_token_id = eos_token_id
         self.seq_len = seq_len
         self.token_embedding = nn.Embedding(vocab_size, text_feature_hidden_size, padding_idx=pad_id)
         self.position_embedding = nn.Embedding(seq_len, text_feature_hidden_size)
@@ -53,9 +50,9 @@ class CLIP(nn.Module):
 
     def encode_images(self, images: torch.Tensor) -> torch.Tensor:
         # images: [B, 3, H, W] -> features: [B, align_feature_hidden_size]
-        x = self.image_backbone(images)           # [B, 128, 1, 1]
-        x = x.flatten(start_dim=1)                # [B, 128]
-        x = self.image_proj(x)                    # [B, align_dim]
+        x = self.image_backbone(images)  # [B, 128, 1, 1]
+        x = x.flatten(start_dim=1)  # [B, 128]
+        x = self.image_proj(x)  # [B, align_dim]
         return x
 
     def encode_texts(self, texts: torch.Tensor) -> torch.Tensor:
@@ -66,12 +63,14 @@ class CLIP(nn.Module):
         embeddings = embeddings + self.position_embedding(positions)  # [B, T, text_hidden]
         # True values will be ignored by the transformer
         key_padding_mask = (texts == self.pad_id)  # [B, T], bool
-        embeddings = self.text_transformer(embeddings, src_key_padding_mask=key_padding_mask)
-        mask = (texts != self.pad_id).float()     # [B, T]
-        masked_sum = (embeddings * mask.unsqueeze(-1)).sum(dim=1)  # [B, text_hidden]
-        denom = mask.sum(dim=1, keepdim=True).clamp(min=1e-6)      # [B, 1]
-        pooled = masked_sum / denom                                # [B, text_hidden]
-        x = self.text_proj(pooled)                                 # [B, align_dim]
+        hidden_states = self.text_transformer(embeddings, src_key_padding_mask=key_padding_mask)
+
+        eos_mask = (texts == self.eos_token_id)
+        eos_indices = eos_mask.float().argmax(dim=1)
+        batch_indices = torch.arange(texts.size(0), device=texts.device)
+        eos_hidden = hidden_states[batch_indices, eos_indices]  # [B, hidden]
+
+        x = self.text_proj(eos_hidden)
         return x
 
     def forward(self, images: torch.Tensor, texts: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -85,26 +84,25 @@ class CLIP(nn.Module):
             tuple[torch.Tensor, torch.Tensor]: logits for images and texts
         """
         image_features = self.encode_images(images)  # (batch_size, align_feature_hidden_size)
-        text_features = self.encode_texts(texts)     # (batch_size, align_feature_hidden_size)
+        text_features = self.encode_texts(texts)  # (batch_size, align_feature_hidden_size)
 
         # normalize L2
         eps = 1e-6
-        image_features = image_features / torch.norm(image_features, p=2, dim=-1, keepdim=True).clamp(min=eps)
-        text_features = text_features / torch.norm(text_features, p=2, dim=-1, keepdim=True).clamp(min=eps)
+        # image_features / torch.norm(image_features, p=2, dim=-1, keepdim=True).clamp(min=eps)
+        image_features = F.normalize(image_features, p=2, dim=-1, eps=eps)
+        # text_features / torch.norm(text_features, p=2, dim=-1, keepdim=True).clamp(min=eps)
+        text_features = F.normalize(text_features, p=2, dim=-1, eps=eps)
 
         # calculate pairwise similarity
-        logits_per_image =  self.logit_scale.exp() * image_features @ text_features.T # (batch_size, batch_size)
-        logits_per_text =  logits_per_image.t()
+        logits_per_image = self.logit_scale.exp() * image_features @ text_features.T  # (batch_size, batch_size)
+        logits_per_text = logits_per_image.t()
 
         # (batch_size, batch_size)
         return logits_per_image, logits_per_text
 
 
 if __name__ == '__main__':
-    tokenize_text("hello world")
-
     model = CLIP(vocab_size=49408, pad_id=0, seq_len=77)
-    
     images = torch.randn(4, 3, 224, 224)
     texts = torch.randint(0, 49408, (4, 77))
     logits_per_image, logits_per_text = model(images, texts)

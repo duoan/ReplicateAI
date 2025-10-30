@@ -2,9 +2,7 @@
 
 | Metric   | Original Paper | Replicated | Notes |
 |----------|----------------|------------|-------|
-| Accuracy | TBD            | TBD        | TBD   |
 | Loss     | TBD            | TBD        | TBD   |
-| F1 Score | TBD            | TBD        | TBD   |
 
 ---
 

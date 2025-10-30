@@ -9,6 +9,7 @@ import os
 from datetime import datetime
 from typing import Any, Optional, Union
 from torch import nn
+from torch.utils.data import DataLoader
 from torchvision.transforms import Compose, ToTensor, Normalize, Resize
 import torch
 import torch.nn.functional as F
@@ -20,9 +21,18 @@ from model import CLIP
 
 DEVICE = torch.accelerator.current_accelerator()
 
+
+def compute_clip_loss(model, images, texts):
+    logits_per_image, logits_per_text = model(images, texts)
+    labels = torch.arange(images.size(0), device=logits_per_image.device)
+    loss_i = F.cross_entropy(logits_per_image, labels)
+    loss_t = F.cross_entropy(logits_per_text, labels)
+    loss = (loss_i + loss_t) * 0.5
+    return loss, logits_per_image, logits_per_text
+
 def main():
     print("🚀 ReplicateAI: Implementation entry point")
-    
+
     transform = Compose([
         Resize((224, 224)),
         ToTensor(),
@@ -34,14 +44,13 @@ def main():
     if torch.cuda.is_available():
         # 40.5K samples
         # split into 80% train and 20% test
-        hf_dataset = load_dataset("ariG23498/flickr8k", split="train").shuffle(seed=42) 
+        hf_dataset = load_dataset("ariG23498/flickr8k", split="train").shuffle(seed=42)
         split = hf_dataset.train_test_split(test_size=0.2, seed=42, shuffle=True)
         hf_train = split["train"]
         hf_test = split["test"]
     else:
         hf_train = load_dataset("ariG23498/flickr8k", split="train[:1024]")  # subset for quick tests
         hf_test = load_dataset("ariG23498/flickr8k", split="train[-512:]")
-
 
     tokenizer = CLIPTokenizerFast.from_pretrained("openai/clip-vit-base-patch32")
     if tokenizer.pad_token is None:
@@ -83,64 +92,76 @@ def main():
     train_dataset = ImageTextPairDataset(hf_train, transform, tokenizer)
     test_dataset = ImageTextPairDataset(hf_test, transform, tokenizer)
 
-    model = CLIP()
+    model = CLIP(pad_id=tokenizer.pad_token_id, eos_token_id=tokenizer.eos_token_id)
+
+    from torchinfo import summary
+    from torchview import draw_graph
+    dataloader = DataLoader(train_dataset, batch_size=32, collate_fn=DataCollator())
+    example = next(iter(dataloader))
+    summary(model, input_data=[example["pixel_values"], example["input_ids"]])
+    draw_graph(
+        model,
+        input_data=[example["pixel_values"], example["input_ids"]],
+        device='cpu',
+        expand_nested=True,
+        save_graph=True,
+        graph_dir="BT",
+        filename=str(os.path.abspath('../figures/model')),
+    )
+
     model.to(DEVICE)
     model.train()
 
     class CLIPTrainer(Trainer):
         def compute_loss(
-            self,
-            model: nn.Module,
-            inputs: dict[str, Union[torch.Tensor, Any]],
-            return_outputs: bool = False,
-            num_items_in_batch: Optional[torch.Tensor] = None,
+                self,
+                model: nn.Module,
+                inputs: dict[str, Union[torch.Tensor, Any]],
+                return_outputs: bool = False,
+                num_items_in_batch: Optional[torch.Tensor] = None,
         ):
             images = inputs["pixel_values"]
             texts = inputs["input_ids"]
-            logits_per_image, logits_per_text = model(images, texts)
-            labels = torch.arange(images.size(0), device=logits_per_image.device)
-            loss_i = F.cross_entropy(logits_per_image, labels)
-            loss_t = F.cross_entropy(logits_per_text, labels)
-            loss = (loss_i + loss_t) * 0.5
+            loss, logits_per_image, logits_per_text = compute_clip_loss(model, images, texts)
             if return_outputs:
-                return loss, {"logits_per_image": logits_per_image, "logits_per_text": logits_per_text}
+                return loss, {
+                    "logits_per_image": logits_per_image,
+                    "logits_per_text": logits_per_text
+                }
             return loss
 
         def prediction_step(
-            self,
-            model: nn.Module,
-            inputs: dict[str, Union[torch.Tensor, Any]],
-            prediction_loss_only: bool,
-            ignore_keys: Optional[list[str]] = None,
+                self,
+                model: nn.Module,
+                inputs: dict[str, Union[torch.Tensor, Any]],
+                prediction_loss_only: bool,
+                ignore_keys: Optional[list[str]] = None,
         ):
             images = inputs["pixel_values"]
             texts = inputs["input_ids"]
             with torch.no_grad():
-                logits_per_image, logits_per_text = model(images, texts)
-                labels = torch.arange(images.size(0), device=logits_per_image.device)
-                loss_i = F.cross_entropy(logits_per_image, labels)
-                loss_t = F.cross_entropy(logits_per_text, labels)
-                loss = (loss_i + loss_t) * 0.5
+                loss, logits_per_image, logits_per_text = compute_clip_loss(model, images, texts)
             if prediction_loss_only:
                 return loss, None, None
             return loss, (logits_per_image, logits_per_text), None
+
     # https://docs.wandb.ai/models/integrations/huggingface#custom-logging-log-and-view-evaluation-samples-during-training
     os.environ["WANDB_PROJECT"] = "2021_CLIP"  # name your W&B project
     os.environ["WANDB_LOG_MODEL"] = "checkpoint"  # log all model checkpoints
     os.environ["WANDB_WATCH"] = "all"  # log gradients and parameters
 
+    batch_size = 1024 if torch.cuda.is_available() else 32
     args = TrainingArguments(
         output_dir="./outputs/",
-        per_device_train_batch_size=32,
-        per_device_eval_batch_size=32,
-        num_train_epochs=10,
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
+        num_train_epochs=32 if torch.cuda.is_available() else 2,
         learning_rate=1e-3,
         logging_steps=10,
-        eval_strategy="steps",
+        eval_strategy="epoch",
         do_train=True,
         do_eval=True,
-        eval_steps=50,
-        save_strategy="steps",
+        save_strategy="epoch",
         save_total_limit=2,
         load_best_model_at_end=True,
         remove_unused_columns=False,
@@ -154,6 +175,8 @@ def main():
         disable_tqdm=False,
         fp16=True if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else False,
         dataloader_pin_memory=True if torch.cuda.is_available() else False,
+        dataloader_num_workers=8 if torch.cuda.is_available() else 0,
+        dataloader_prefetch_factor=8 if torch.cuda.is_available() else None,
         report_to=["wandb"],
         run_name=f"{getpass.getuser()}-{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
     )

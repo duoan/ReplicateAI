@@ -1,0 +1,1 @@
+salloc -N1 -t0:15:00 --cpus-per-task 8 --ntasks-per-node=1 --gres=gpu:V100:1 --mem-per-gpu=32G
