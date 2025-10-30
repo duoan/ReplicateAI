@@ -14,5 +14,6 @@ wheels/
 tokenizer*.json
 
 wandb/
+outputs/
 
 data/

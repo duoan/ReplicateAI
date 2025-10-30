@@ -4,6 +4,9 @@ Main implementation file for the paper reproduction.
 Example:
     python main.py --config configs/default.yaml
 """
+import getpass
+import os
+from datetime import datetime
 from typing import Any, Optional, Union
 from torch import nn
 from torchvision.transforms import Compose, ToTensor, Normalize, Resize
@@ -121,6 +124,10 @@ def main():
             if prediction_loss_only:
                 return loss, None, None
             return loss, (logits_per_image, logits_per_text), None
+    # https://docs.wandb.ai/models/integrations/huggingface#custom-logging-log-and-view-evaluation-samples-during-training
+    os.environ["WANDB_PROJECT"] = "2021_CLIP"  # name your W&B project
+    os.environ["WANDB_LOG_MODEL"] = "checkpoint"  # log all model checkpoints
+    os.environ["WANDB_WATCH"] = "all"  # log gradients and parameters
 
     args = TrainingArguments(
         output_dir="./outputs/",
@@ -130,10 +137,13 @@ def main():
         learning_rate=1e-3,
         logging_steps=10,
         eval_strategy="steps",
+        do_train=True,
+        do_eval=True,
         eval_steps=50,
-        save_strategy="no",
+        save_strategy="steps",
+        save_total_limit=2,
+        load_best_model_at_end=True,
         remove_unused_columns=False,
-        report_to=[],
         lr_scheduler_type="cosine",
         warmup_ratio=0.1,
         optim="adamw_torch",
@@ -144,6 +154,8 @@ def main():
         disable_tqdm=False,
         fp16=True if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else False,
         dataloader_pin_memory=True if torch.cuda.is_available() else False,
+        report_to=["wandb"],
+        run_name=f"{getpass.getuser()}-{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
     )
 
     trainer = CLIPTrainer(
